@@ -1,0 +1,90 @@
+---
+title: "creativity_pilot"
+format: html
+editor: visual
+---
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(dplyr)
+```
+
+## Read the data
+
+```{r}
+# Remove question text rows
+pilot_data <- read_csv("~/Desktop/idea_generation/pilot_2025.09.11.csv") %>% 
+  slice(-(1:2))
+
+# Filter for participants who passed attention check
+passed_attn_check <- pilot_data %>% 
+  filter(attn_check == "4" & attn_check_4_TEXT == "8")
+```
+
+## Basic Cleaning
+
+```{r}
+# Rename condition column
+
+pilot_data_renamed <- passed_attn_check %>% 
+  rename(condition = FL_3_DO) %>% 
+  relocate(condition, .after = attn_check_4_TEXT) %>% 
+  mutate(condition = case_when(condition == "GuidedInstructions" ~ "Pilot",
+                               condition == "UnguidedInstructions" ~ "Passenger",
+                               condition == "ControlInstructions" ~ "Control"))
+
+# Convert to long format
+trial_data <- pilot_data_renamed %>% 
+   pivot_longer(names_to = "trial",
+                values_to = "use",
+                cols = starts_with(c("pilot", "pass", "control"))) %>% 
+  filter(!is.na(use)) %>% 
+  relocate(trial, .after = "condition") %>% 
+  relocate(use, .after = "trial") %>% 
+  mutate(object = str_extract(trial, "(?<=_).*")) %>% 
+  mutate(object = str_remove(object, "_.*")) %>% 
+  relocate(object, .after = "trial") %>% 
+  mutate(object = if_else(object == "bubble", "bubblewrap", object))
+
+write_csv(trial_data, "~/Desktop/idea_generation/trial_data.csv")
+```
+
+## Run ocsai
+
+```{r}
+originality <- read_csv("~/Desktop/idea_generation/trial_data_scored.csv")
+
+# Add a column with trial number
+originality_trials <- originality %>% 
+  mutate(trial_num = str_extract(trial, "(?<=_)[^_]*$")) %>% 
+  relocate(trial_num, .after = "trial")
+
+# Originality by condition
+ggplot(originality, aes(x=condition, y=originality)) +
+  geom_boxplot() +
+  stat_summary(fun="mean")
+
+# Plot originality over the course of the study
+originality_trials %>% 
+  group_by(condition, trial_num) %>% 
+  summarize(originality = mean(originality)) %>% 
+  ggplot(aes(x=trial_num, y = originality, group=condition, color=condition)) +
+  geom_line() +
+  geom_point() +
+  labs(x="Trial Number") +
+  ylim(1,5)
+
+```
+
+## Homogenization 
+
+```{r}
+trial_data %>% 
+  select(condition, object, use) %>% 
+  group_by(condition, object) %>% 
+  arrange(condition, object) %>% 
+  print(n=675)
+
+```
