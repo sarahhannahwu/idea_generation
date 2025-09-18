@@ -33,7 +33,7 @@ library(scales)
 
 ```{r}
 # Remove question text rows
-pilot_data <- read_csv("~/Desktop/idea_generation/pilot_2025.09.11.csv") %>% 
+pilot_data <- read_csv("data/pilot_2025.09.11.csv") %>% 
   slice(-(1:2))
 
 # Filter for participants who passed attention check
@@ -89,7 +89,7 @@ trial_data <- pilot_data_renamed %>%
   relocate(object, .after = "trial") %>% 
   mutate(object = if_else(object == "bubble", "bubblewrap", object))
 
-write_csv(trial_data, "~/Desktop/idea_generation/trial_data.csv")
+write_csv(trial_data, "data/trial_data.csv")
 ```
 
 ```{r}
@@ -99,7 +99,7 @@ write_csv(trial_data, "~/Desktop/idea_generation/trial_data.csv")
 ## Run ocsai model to automatically score originality
 
 ```{r}
-originality <- read_csv("~/Desktop/idea_generation/trial_data_scored.csv")
+originality <- read_csv("data/trial_data_scored.csv")
 
 # Add a column with trial number
 originality_trials <- originality %>% 
@@ -137,8 +137,8 @@ trial_data %>%
   arrange(condition, object) 
 
 # Use sentence transformers model in Python to analyze semantic similarity
-semantic_similarities <- read_csv("~/Desktop/idea_generation/semantic_similarities.csv")
-semantic_similarities_summary <- read_csv("~/Desktop/idea_generation/semantic_similarity_summary.csv")
+semantic_similarities <- read_csv("data/semantic_similarities.csv")
+semantic_similarities_summary <- read_csv("data/semantic_similarity_summary.csv")
 
 semantic_similarities %>% 
   group_by(condition) %>% 
@@ -172,7 +172,7 @@ idea_submissions_long <- trial_data %>%
   unite(col = "idea_id", ResponseId, trial, sep="-")
   
 
-write_csv(idea_submissions_long, "~/Desktop/idea_generation/idea_submissions.csv")
+write_csv(idea_submissions_long, "data/idea_submissions.csv")
 
 # Create separate csvs for frisbee, brick, and bubblewrap
 frisbee_submissions <- idea_submissions_long %>% 
@@ -186,9 +186,9 @@ bubble_submissions <- idea_submissions_long %>%
 
 # Save to csvs
 
-write_csv(frisbee_submissions, "~/Desktop/idea_generation/frisbee_submissions.csv")
-write_csv(brick_submissions, "~/Desktop/idea_generation/brick_submissions.csv")
-write_csv(bubble_submissions, "~/Desktop/idea_generation/bubble_submissions.csv")
+write_csv(frisbee_submissions, "data/frisbee_submissions.csv")
+write_csv(brick_submissions, "data/brick_submissions.csv")
+write_csv(bubble_submissions, "data/bubble_submissions.csv")
            
 ```
 
@@ -201,7 +201,7 @@ N = 99 participants
 # Each row represents a crowdworkers' responses. The data is super wide because each column represents a response to a single pilot study participant's idea
 # First, wrangle the data so that the column format is similar to the pilot study data: frisbee_1, frisbee_2...bubble_5
 
-crowdworkers <- read_csv("~/Desktop/idea_generation/crowdworker_eval_2025.09.18.csv")
+crowdworkers <- read_csv("data/crowdworker_eval_2025.09.18.csv")
 
 # Check which idea submitter is tied to which crowdworker
 submitter_ids <- crowdworkers %>% 
