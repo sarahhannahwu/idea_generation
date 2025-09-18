@@ -1,14 +1,32 @@
 ---
-title: "creativity_pilot"
-format: html
+title: "Pilot: Idea Generation with AI"
+format: 
+  html:
+    code-overflow: wrap
+    df-print: paged
+    embed-resources: true
+    css: |
+      body {
+        max-width: 1200px;
+        word-wrap: break-word;
+      }
+      pre code {
+        white-space: pre-wrap;
+      }
 editor: visual
 ---
 
 ## Libraries
 
-```{r}
+```{r, echo=FALSE}
 library(tidyverse)
 library(dplyr)
+library(text)
+library(descriptr)
+library(ggsignif)
+library(ggpubr)
+library(scales)
+
 ```
 
 ## Read the data
@@ -21,9 +39,16 @@ pilot_data <- read_csv("~/Desktop/idea_generation/pilot_2025.09.11.csv") %>%
 # Filter for participants who passed attention check
 passed_attn_check <- pilot_data %>% 
   filter(attn_check == "4" & attn_check_4_TEXT == "8")
+
+
+
 ```
 
-## Basic Cleaning
+## Basic cleaning, memory check results
+
+Near the end of the survey, we asked participants to recall the gist of the instruction text for the condition to which they were assigned. They picked from the multiple choice options of "Stay in control of the AI tool" (Pilot), "Let the AI tool do the heavy lifting" (Passenger), or "Don't use AI" (Control).
+
+38 out of 45 participants correctly recalled the gist of the instruction text. The 6 of the 7 participants who did not correctly recall the instruction text incorrectly selected "Stay in control of the AI tool," suggesting that the options may have been unclear.
 
 ```{r}
 # Rename condition column
@@ -35,11 +60,27 @@ pilot_data_renamed <- passed_attn_check %>%
                                condition == "UnguidedInstructions" ~ "Passenger",
                                condition == "ControlInstructions" ~ "Control"))
 
+# Filter for participants who correctly answered the memory check question about the condition to which they were assigned
+# 1 = "Stay in control of the AI tool" (Pilot)
+# 2 = "Let the AI tool do the heavy lifting (Passenger)
+# 3 = "Don't use AI" (Control)
+
+memory_check <- pilot_data_renamed %>% 
+  mutate(memory_check_condition = case_when(memory_check == "1" ~ "Pilot",
+                                            memory_check == "2" ~ "Passenger",
+                                            is.na(memory_check) ~ "Control")) %>% 
+  relocate(memory_check_condition, .after = "memory_check") %>% 
+  mutate(memory_check_result = if_else(condition == memory_check_condition, 1, 0)) %>% 
+  relocate(memory_check_result, .after = "memory_check_condition")
+
+
+
 # Convert to long format
 trial_data <- pilot_data_renamed %>% 
-   pivot_longer(names_to = "trial",
+  pivot_longer(names_to = "trial",
                 values_to = "use",
                 cols = starts_with(c("pilot", "pass", "control"))) %>% 
+  mutate(trial = str_remove(trial, "open_")) %>% 
   filter(!is.na(use)) %>% 
   relocate(trial, .after = "condition") %>% 
   relocate(use, .after = "trial") %>% 
@@ -51,7 +92,11 @@ trial_data <- pilot_data_renamed %>%
 write_csv(trial_data, "~/Desktop/idea_generation/trial_data.csv")
 ```
 
-## Run ocsai
+```{r}
+
+```
+
+## Run ocsai model to automatically score originality
 
 ```{r}
 originality <- read_csv("~/Desktop/idea_generation/trial_data_scored.csv")
@@ -78,13 +123,224 @@ originality_trials %>%
 
 ```
 
-## Homogenization 
+In this small sample of N=15/condition, the Passenger condition had the most original responses (as scored by the model), followed by the Control condition, and then the Pilot condition.
+
+## Homogeneity analysis using sentence embedding model
 
 ```{r}
+options(digits=3)
+
+# Group the uses by condition and object 
 trial_data %>% 
-  select(condition, object, use) %>% 
+  select(ResponseId, condition, object, use) %>% 
   group_by(condition, object) %>% 
-  arrange(condition, object) %>% 
-  print(n=675)
+  arrange(condition, object) 
+
+# Use sentence transformers model in Python to analyze semantic similarity
+semantic_similarities <- read_csv("~/Desktop/idea_generation/semantic_similarities.csv")
+semantic_similarities_summary <- read_csv("~/Desktop/idea_generation/semantic_similarity_summary.csv")
+
+semantic_similarities %>% 
+  group_by(condition) %>% 
+  summarize(mean_similarity = mean(similarity),
+            sd_similarity = sd(similarity)) %>% 
+  arrange(desc(mean_similarity))
+
+ggboxplot(semantic_similarities, x="condition", y="similarity", color="condition") +
+  stat_summary(fun="mean") 
+```
+
+The Passenger condition had the greatest semantic similarity among ideas, followed by the Pilot condition, and then Control condition.
+
+## Crowdsourced evaluations of creativity
+
+The next step will be to have another set of crowdworkers evaluate the creativity of the pilot participants' ideas in terms of overall creativity, originality, and usefulness.
+
+```{r}
+
+# Prepare idea submissions dataset for evaluation by another group of crowdworkers
+# The data needs to be in long format, where each row represents a single idea for a single object
+
+# In case you want to view wide
+idea_submissions_wide <- trial_data %>% 
+  mutate(trial = str_extract(trial, "([A-Za-z0-9]+)(_)([A-Za-z0-9]+)$")) %>% 
+  pivot_wider(id_cols = c("ResponseId", "condition", "process_open-ended"),
+              names_from = "trial",
+              values_from = "use")
+
+idea_submissions_long <- trial_data %>% 
+  unite(col = "idea_id", ResponseId, trial, sep="-")
+  
+
+write_csv(idea_submissions_long, "~/Desktop/idea_generation/idea_submissions.csv")
+
+# Create separate csvs for frisbee, brick, and bubblewrap
+frisbee_submissions <- idea_submissions_long %>% 
+  filter(object=="frisbee")
+
+brick_submissions <- idea_submissions_long %>% 
+  filter(object=="brick")
+
+bubble_submissions <- idea_submissions_long %>% 
+  filter(object=="bubblewrap")
+
+# Save to csvs
+
+write_csv(frisbee_submissions, "~/Desktop/idea_generation/frisbee_submissions.csv")
+write_csv(brick_submissions, "~/Desktop/idea_generation/brick_submissions.csv")
+write_csv(bubble_submissions, "~/Desktop/idea_generation/bubble_submissions.csv")
+           
+```
+
+## Analysis of crowdworkers' subjective evaluations
+
+N = 99 participants
+
+```{r}
+# Read in the crowdworker evaluations
+# Each row represents a crowdworkers' responses. The data is super wide because each column represents a response to a single pilot study participant's idea
+# First, wrangle the data so that the column format is similar to the pilot study data: frisbee_1, frisbee_2...bubble_5
+
+crowdworkers <- read_csv("~/Desktop/idea_generation/crowdworker_eval_2025.09.18.csv")
+
+# Check which idea submitter is tied to which crowdworker
+submitter_ids <- crowdworkers %>% 
+  slice_head(n=1) %>% 
+  pivot_longer(cols = 14:2038, 
+               names_to = "participant_trial",
+               values_to = "submitter_id") %>% 
+  select(participant_trial, submitter_id) %>% 
+  mutate(submitter_id = str_extract(submitter_id, "R_[A-Za-z0-9]+")) %>% 
+  separate(participant_trial,
+           into = c("person_id", "trial"),
+           extra = "merge") %>% 
+    separate(col = trial,
+           into = c("metric", "trial"),
+           sep = "_",
+           extra = "merge") %>% 
+  mutate(metric = case_when(metric == "c" ~ "creativity",
+                            metric == "o" ~ "originality",
+                            metric == "u" ~ "usefulness")) %>% 
+  distinct(person_id, submitter_id)
+
+
+crowdworker_eval <- crowdworkers %>% 
+  filter(DistributionChannel=="anonymous") 
+
+crowdworker_passed_attn_check <- crowdworker_eval %>% 
+  filter(attn_check == "4" & attn_check_4_TEXT == "8")
+
 
 ```
+
+```{r}
+# Ensure there is a column for the ID of the pilot participant that the submitted idea came from
+crowdworker_eval_long <- crowdworker_passed_attn_check %>% 
+  pivot_longer(cols = 14:2038,
+               names_to = "participant_trial",
+               values_to = "rating") %>% 
+  drop_na(rating) %>% 
+  separate(col = participant_trial, 
+           into = c("person_id", "trial"),
+           sep = "_",
+           extra = "merge") %>% 
+  mutate(rating = as.numeric(rating)) %>% 
+  separate(col = trial,
+           into = c("metric", "trial"),
+           sep = "_",
+           extra = "merge") %>% 
+  mutate(metric = case_when(metric == "c" ~ "creativity",
+                            metric == "o" ~ "originality",
+                            metric == "u" ~ "usefulness")) %>% 
+  unite(col="participant_rating_id", ResponseId, metric, trial, remove = FALSE) %>% 
+  mutate(trial_id = str_remove(participant_rating_id, "_creativity|_originality|_usefulness")) %>% 
+  pivot_wider(id_cols=c(trial_id, person_id), 
+              names_from = "metric",
+              values_from = "rating")
+
+
+crowdworkers_submitters <- left_join(crowdworker_eval_long, submitter_ids, by = "person_id") %>% 
+  extract(trial_id, 
+          into = c("crowdworker_id", "trial"),
+          regex = "(R_[A-Za-z0-9]+)_(.*)")
+
+
+
+
+```
+
+```{r}
+# Merge with trial data from the pilot
+
+trial_data_renamed <- trial_data %>% 
+  rename(submitter_id = "ResponseId") %>% 
+  mutate(trial = str_remove(trial, "^[^_]*_")) %>% 
+  select(submitter_id, condition, trial, object, use)
+
+crowdworkers_submitters_ideas <- full_join(crowdworkers_submitters, trial_data_renamed, by=c("submitter_id", "trial"))
+
+# Descriptives of overall creativity, originality, and usefulness by condition
+crowdworkers_submitters_ideas %>% 
+  group_by(condition) %>% 
+  get_summary_stats(c(creativity, originality, usefulness),
+                    type="mean_sd")
+
+
+```
+
+```{r}
+crowdworkers_submitters_ideas %>% 
+  pivot_longer(cols=c(creativity, originality, usefulness),
+               names_to = "metric",
+               values_to = "rating") %>% 
+  ggplot(aes(x=condition, y=rating)) +
+  geom_boxplot() +
+  stat_summary(fun="mean") +
+  facet_wrap(~metric)
+
+```
+
+```{r}
+# Distributions of ratings for each condition
+crowdworkers_submitters_ideas %>% 
+  pivot_longer(cols=c(creativity, originality, usefulness),
+               names_to = "metric",
+               values_to = "rating") %>% 
+  ggplot(aes(x=rating)) +
+  geom_histogram(bins=5,
+                 color="white",
+                 aes(y=after_stat(density))) +
+  facet_wrap(~metric+condition)
+
+```
+
+```{r}
+# For each pair of submitter_id and crowdworker_id we can compute mean ratings
+crowdworkers_submitters_ideas %>% 
+  group_by(submitter_id, crowdworker_id) %>% 
+  summarize(mean_creativity = mean(creativity),
+         mean_originality = mean(originality),
+         mean_usefulness = mean(usefulness)) %>% 
+  group_by(submitter_id) %>% 
+  mutate(rater_num = row_number()) %>% 
+  ungroup() 
+
+
+
+# What is the relationship between originality and overall creativity? Usefulness and overall creativity? Interaction between the two?
+
+
+# Comparison of automated vs. manual originality evaluations
+```
+
+# Next Steps
+
+## Chat log data: Actual interactions with AI
+
+We want to compare the interaction behaviors of Passengers and Pilots. We expect that Passengers will copy-paste more than Pilots. Generally, their submitted ideas should look more like what ChatGPT suggested. We can also look at the prompting strategies of Passengers vs. Pilots.
+
+## Process data as a moderator of creative outcomes
+
+We asked participants to report the extent to which they (1) felt they were engaging in dialogue with AI, (2) felt that AI helped augment their creativity, and (3) found the task intrinsically motivating. We might expect, for example, that Pilots produce more diverse ideas *only if* they perceive that AI helped them consider unexpected angles of the object.
+
+Regardless of experimental condition, we might find systematic differences in AI usage when we compare the most vs. least creative participants. How can we characterize those differences?

@@ -1,0 +1,4 @@
+- source: creativity_pilot.qmd
+  quarto-pub:
+    - id: 2a78d324-8f33-4bda-968f-79d611d020ae
+      url: https://sarahwu.quarto.pub/creativity_pilot
