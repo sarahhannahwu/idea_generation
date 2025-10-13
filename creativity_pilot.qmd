@@ -3,6 +3,7 @@ title: "Pilot: Idea Generation with AI"
 format: 
   html:
     code-overflow: wrap
+    code-fold: true
     df-print: paged
     embed-resources: true
     css: |
@@ -19,6 +20,8 @@ editor: visual
 ## Libraries
 
 ```{r, echo=FALSE}
+library(here) # to enable easy file referencing
+library(renv) # helps create reproducible environments
 library(tidyverse)
 library(dplyr)
 library(text)
@@ -26,6 +29,14 @@ library(descriptr)
 library(ggsignif)
 library(ggpubr)
 library(scales)
+library(lme4)
+library(simr)
+library(broom)
+library(kableExtra)
+library(knitr)
+library(papaja) # For automatic formatting of statistics
+library(progress)
+
 
 ```
 
@@ -271,11 +282,12 @@ crowdworkers_submitters <- left_join(crowdworker_eval_long, submitter_ids, by = 
 
 ```{r}
 # Merge with trial data from the pilot
+# participantID refers to the CloudResearch ID of the idea submitter
 
 trial_data_renamed <- trial_data %>% 
   rename(submitter_id = "ResponseId") %>% 
   mutate(trial = str_remove(trial, "^[^_]*_")) %>% 
-  select(submitter_id, condition, trial, object, use)
+  select(submitter_id, condition, trial, object, use, participantId)
 
 crowdworkers_submitters_ideas <- full_join(crowdworkers_submitters, trial_data_renamed, by=c("submitter_id", "trial"))
 
@@ -283,8 +295,32 @@ crowdworkers_submitters_ideas <- full_join(crowdworkers_submitters, trial_data_r
 crowdworkers_submitters_ideas %>% 
   group_by(condition) %>% 
   get_summary_stats(c(creativity, originality, usefulness),
-                    type="mean_sd")
+                    type="mean_sd") %>% 
+  arrange(variable)
 
+
+```
+
+## Compensate bonuses for those whose ideas were rated as greater than 3 out of 5 on the creativity scales
+
+7 out of the 45 pilot study participants met the criteria for a bonus.
+
+```{r}
+bonuses <- crowdworkers_submitters_ideas %>% 
+  group_by(participantId) %>% 
+  get_summary_stats(c(creativity, originality, usefulness),
+                    type="mean_sd") %>% 
+  pivot_wider(id_cols = "participantId",
+              names_from = "variable",
+              values_from = "mean") %>% 
+  filter(originality > 3 & usefulness > 3) %>% 
+  select(-c(creativity, originality, usefulness)) %>% 
+  rename("Participant or Assignment" = participantId) %>% 
+  mutate(Amount = 1.00,
+         Message = "Great job! Your ideas scored high on creativity, so you receive a bonus.") 
+
+write_csv(bonuses, "data/pilot_bonus.csv")
+  
 
 ```
 
@@ -331,16 +367,140 @@ crowdworkers_submitters_ideas %>%
 
 
 # Comparison of automated vs. manual originality evaluations
+manual_ratings <- crowdworkers_submitters_ideas %>% 
+  group_by(submitter_id) %>% 
+  summarize(mean_creativity = mean(creativity),
+         mean_originality = mean(originality),
+         mean_usefulness = mean(usefulness)) %>% 
+  rename(manual_originality = "mean_originality")
+
+automated_ratings <- originality_trials %>% 
+  group_by(ResponseId) %>% 
+  summarize(originality = mean(originality)) %>% 
+  rename(submitter_id = "ResponseId",
+         automated_originality = "originality") 
+
+cor.test(manual_ratings$manual_originality, automated_ratings$automated_originality)
+
+both_ratings <- full_join(manual_ratings, automated_ratings, by="submitter_id")
+
+ggplot(both_ratings, aes(x=manual_originality, y=automated_originality)) +
+  geom_point()
+
+
 ```
 
-# Next Steps
+## Table of Regression Outputs
+```{r}
+# originality_mod <- lm(originality ~ )
+# 
+# kable(tidy(mod), digits=2)
+# 
+# tstats <- t.test()
+
+
+```
+
+
+The difference was significant (`r apa_print(tstats)$statistic`).
+
+Template to render in APA style can be found here: https://wjschne.github.io/apaquarto/installation.html
+
+# Exploratory Next Steps
 
 ## Chat log data: Actual interactions with AI
 
 We want to compare the interaction behaviors of Passengers and Pilots. We expect that Passengers will copy-paste more than Pilots. Generally, their submitted ideas should look more like what ChatGPT suggested. We can also look at the prompting strategies of Passengers vs. Pilots.
+
+```{r}
+chat_log <- read_csv("data/cleaned_user_ai_conversations.csv")
+```
+
+
+```{r}
+
+
+```
 
 ## Process data as a moderator of creative outcomes
 
 We asked participants to report the extent to which they (1) felt they were engaging in dialogue with AI, (2) felt that AI helped augment their creativity, and (3) found the task intrinsically motivating. We might expect, for example, that Pilots produce more diverse ideas *only if* they perceive that AI helped them consider unexpected angles of the object.
 
 Regardless of experimental condition, we might find systematic differences in AI usage when we compare the most vs. least creative participants. How can we characterize those differences?
+
+# Power Analysis for Study 2
+
+I tried a simple power analysis in GPower, but that wasn't the best for my data and study design. So now I'm using simr:
+
+```{r, echo=FALSE}
+# Create a mixed model from pilot data
+manual_ratings_model <- lmer(
+  originality ~ condition + (1|trial) + (1|submitter_id), data=crowdworkers_submitters_ideas)
+summary(manual_ratings_model)
+
+# # Decide how many submitters
+unique_submitters <- unique(crowdworkers_submitters_ideas$submitter_id)
+#   
+# # Decide how many raters needed to evaluate those 
+# unique_raters <- unique(crowdworkers_submitters_ideas$crowdworker_id)
+# unique_raters_sample <- sample(unique_raters, size = S, replace = TRUE)
+
+# Sample submitters
+# Get all of their ideas
+# Rename their ideas so they're unique
+# Combine into simulation dataset
+# Repeat until you have the number of ratings specified in N
+
+# Determine total number of ratings
+# Then figure out how those ratings ought to be sourced. How many submitters does that require, holding the number of ideas and objects constant.
+# Account for presentation order after the fact, rather than constraining the study design.
+
+# Loop through the sample of submitters
+sims <- 1000
+S <- 300 # This can be adjusted to test different numbers of submitters
+
+summaries <- list()
+for (i in 1:sims) {
+  # data_resamp <- crowdworkers_submitters_ideas %>%
+  # slice_sample(n = N, replace = TRUE)
+  
+  unique_submitters_sample <- sample(unique_submitters, size = S, replace = TRUE)
+  
+  data_sample_list <- list()
+  for (j in 1:length(unique_submitters_sample)){
+    data_sample_list[[j]] <- crowdworkers_submitters_ideas %>% 
+      filter(submitter_id == unique_submitters_sample[j]) %>% 
+      mutate(submitter_id = paste0(submitter_id, j)) 
+    
+  }
+  data_resamp <- do.call(rbind, data_sample_list)
+  manual_ratings_model <- lmer(
+  originality ~ condition + (1|trial) + (1|submitter_id), data=data_resamp)
+  summaries[[i]] <- summary(manual_ratings_model)$coefficients[2:3, 3]
+}
+
+summaries_bound <- do.call(rbind, summaries)
+
+# t must be greater than 2 to be significant. We just need absolute value
+
+power_Passenger <- mean(abs(summaries_bound[,1]) > 2)
+power_Pilot <- mean(abs(summaries_bound[,2]) > 2)
+
+power_Passenger
+power_Pilot
+  
+
+```
+
+```{r, echo=FALSE}
+# # Create simulated model using extracted parameters
+# model <- makeLmer(originality ~ condition + (1|trial), fixef=fixed, VarCorr=rand, sigma=s, data=originality_trials)
+# model
+# 
+# # Extend the model along ResponseId
+# model_ext <- extend(model, along="trial", n=500)
+# model_ext
+```
+
+```{}
+```
