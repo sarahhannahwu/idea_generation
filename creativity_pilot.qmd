@@ -15,6 +15,7 @@ format:
         white-space: pre-wrap;
       }
 editor: visual
+jupyter: python3
 ---
 
 ## Libraries
@@ -30,12 +31,14 @@ library(ggsignif)
 library(ggpubr)
 library(scales)
 library(lme4)
+library(lmerTest)
 library(simr)
 library(broom)
 library(kableExtra)
 library(knitr)
 library(papaja) # For automatic formatting of statistics
 library(progress)
+library(emmeans)
 
 
 ```
@@ -101,10 +104,6 @@ trial_data <- pilot_data_renamed %>%
   mutate(object = if_else(object == "bubble", "bubblewrap", object))
 
 write_csv(trial_data, "data/trial_data.csv")
-```
-
-```{r}
-
 ```
 
 ## Run ocsai model to automatically score originality
@@ -180,7 +179,7 @@ idea_submissions_wide <- trial_data %>%
               values_from = "use")
 
 idea_submissions_long <- trial_data %>% 
-  unite(col = "idea_id", ResponseId, trial, sep="-")
+  unite(col = "idea_id", ResponseId, trial, sep="-", remove = FALSE)
   
 
 write_csv(idea_submissions_long, "data/idea_submissions.csv")
@@ -390,7 +389,8 @@ ggplot(both_ratings, aes(x=manual_originality, y=automated_originality)) +
 
 ```
 
-## Table of Regression Outputs
+## Similarity Model
+
 ```{r}
 # originality_mod <- lm(originality ~ )
 # 
@@ -398,11 +398,11 @@ ggplot(both_ratings, aes(x=manual_originality, y=automated_originality)) +
 # 
 # tstats <- t.test()
 
-
+semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|ResponseId), data=semantic_similarities)
+summary(semantic_similarity_mod)
 ```
 
-
-The difference was significant (`r apa_print(tstats)$statistic`).
+Examine differences (`r apa_print(tstats)$statistic`).
 
 Template to render in APA style can be found here: https://wjschne.github.io/apaquarto/installation.html
 
@@ -416,7 +416,6 @@ We want to compare the interaction behaviors of Passengers and Pilots. We expect
 chat_log <- read_csv("data/cleaned_user_ai_conversations.csv")
 ```
 
-
 ```{r}
 
 
@@ -428,14 +427,14 @@ We asked participants to report the extent to which they (1) felt they were enga
 
 Regardless of experimental condition, we might find systematic differences in AI usage when we compare the most vs. least creative participants. How can we characterize those differences?
 
-# Power Analysis for Study 2
+# Power Analysis 
 
-I tried a simple power analysis in GPower, but that wasn't the best for my data and study design. So now I'm using simr:
+I tried a simple power analysis in GPower, but that wasn't the best for my data and study design. So now I'm using a simulation:
 
 ```{r, echo=FALSE}
 # Create a mixed model from pilot data
 manual_ratings_model <- lmer(
-  originality ~ condition + (1|trial) + (1|submitter_id), data=crowdworkers_submitters_ideas)
+  originality ~ condition + (1|object) + (1|submitter_id), data=crowdworkers_submitters_ideas)
 summary(manual_ratings_model)
 
 # # Decide how many submitters
@@ -459,7 +458,7 @@ unique_submitters <- unique(crowdworkers_submitters_ideas$submitter_id)
 sims <- 1000
 S <- 300 # This can be adjusted to test different numbers of submitters
 
-summaries <- list()
+originality_summaries <- list()
 for (i in 1:sims) {
   # data_resamp <- crowdworkers_submitters_ideas %>%
   # slice_sample(n = N, replace = TRUE)
@@ -475,11 +474,11 @@ for (i in 1:sims) {
   }
   data_resamp <- do.call(rbind, data_sample_list)
   manual_ratings_model <- lmer(
-  originality ~ condition + (1|trial) + (1|submitter_id), data=data_resamp)
-  summaries[[i]] <- summary(manual_ratings_model)$coefficients[2:3, 3]
+  originality ~ condition + (1|object) + (1|submitter_id), data=data_resamp)
+  originality_summaries[[i]] <- summary(manual_ratings_model)$coefficients[2:3, 3]
 }
 
-summaries_bound <- do.call(rbind, summaries)
+originality_summaries_bound <- do.call(rbind, originality_summaries)
 
 # t must be greater than 2 to be significant. We just need absolute value
 
@@ -502,5 +501,194 @@ power_Pilot
 # model_ext
 ```
 
-```{}
+## IRiSS Sample
+
+```{r}
+iriss <- read_csv("data/iriss.csv") %>% 
+  slice(-(1:2)) %>% 
+  filter(attn_check == "4" & attn_check_4_TEXT == "8") %>% 
+  rename(condition = FL_3_DO) %>% 
+  relocate(condition, .after = attn_check_4_TEXT) %>% 
+  mutate(condition = case_when(condition == "GuidedInstructions" ~ "Pilot",
+                               condition == "UnguidedInstructions" ~ "Passenger",
+                               condition == "ControlInstructions" ~ "Control")) %>% 
+  filter(Progress=="100")
+
+iriss_memory_check <- iriss %>% 
+  mutate(memory_check_condition = case_when(memory_check == "1" ~ "Pilot",
+                                            memory_check == "2" ~ "Passenger",
+                                            is.na(memory_check) ~ "Control")) %>% 
+  relocate(memory_check_condition, .after = "memory_check") %>% 
+  mutate(memory_check_result = if_else(condition == memory_check_condition, 1, 0)) %>% 
+  relocate(memory_check_result, .after = "memory_check_condition") 
+
+# Check the % of participants who remembered what the instructions said
+iriss_memory_check %>% 
+  count(memory_check_result) %>% 
+  mutate(prop=n/sum(n))
+
+iriss_memory_check %>% 
+  count(condition)
+
+
 ```
+```{r}
+# Convert to long format
+iriss_trial_data <- iriss %>% 
+  pivot_longer(names_to = "trial",
+                values_to = "use",
+                cols = starts_with(c("pilot", "pass", "control"))) %>% 
+  mutate(trial = str_remove(trial, "open_")) %>% # fixed naming problem
+  filter(grepl("^(pilot|pass|control)_(brick|frisbee|bubble)_[1-5]$", trial)) %>% 
+  filter(!is.na(use)) %>% # Keep only the trials with responses
+  relocate(trial, .after = "condition") %>% 
+  relocate(use, .after = "trial") %>% 
+  mutate(object = str_extract(trial, "(?<=_).*")) %>% 
+  mutate(object = str_remove(object, "_.*")) %>% 
+  relocate(object, .after = "trial") %>% 
+  mutate(object = if_else(object == "bubble", "bubblewrap", object))
+
+write_csv(iriss_trial_data, "data/iriss_trial_data.csv")
+```
+
+
+```{r}
+iriss_self_perceptions <- iriss %>% 
+  pivot_longer(names_to = "metric",
+               values_to = "rating",
+               cols = c(ends_with("_unique"),
+                        matches("self_[1-3]$"))) %>% 
+  drop_na(rating) %>% 
+  mutate(metric = str_replace_all(metric, 
+                                  c("self_1" = "creativity",
+                                    "self_2" = "originality",
+                                    "self_3" = "usefulness"))) %>% 
+  separate(
+    col = metric,
+    into = c("condition", "object", "question"),
+    sep = "_",
+    remove = TRUE# keep original column if you still want it
+  ) %>% 
+  mutate(
+    object = str_replace_all(
+      object,
+      c("\\bfris\\b" = "frisbee",
+        "\\bbubb\\b"  = "bubble"))) %>% 
+  mutate(condition = case_when(condition == "pilot" ~ "Pilot",
+                               condition == "pass" ~ "Passenger",
+                               condition == "control" ~ "Control")) %>% 
+  pivot_wider(names_from = "question",
+              values_from = "rating") %>% 
+  mutate(across(c(creativity, originality, usefulness), as.numeric)) 
+
+```
+
+
+```{r}
+# How unique did participants think their ideas were?
+iriss_self_perceptions %>% 
+  drop_na(unique) %>% 
+  ggplot(aes(x=unique)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~condition) +
+  scale_x_discrete(labels = c(
+    "1" = "No one",
+    "2" = "Some people",
+    "3" = "Most people",
+    "4" = "Everyone"
+  )) +
+  labs(title="Do you think many other people came up with this idea as well?")
+```
+
+
+```{r}
+# How does mean originality compare across conditions?
+
+iriss_self_perceptions %>% 
+  drop_na(originality) %>% 
+  group_by(ResponseId, condition) %>% 
+  summarize(originality = mean(originality)) %>% 
+  ggplot(aes(x=condition, y=originality)) +
+  geom_boxplot() +
+  stat_summary(fun="mean") 
+  labs(y="Self-perceived originality")
+```
+
+
+```{r}
+iriss_originality_mod <- lmer(
+  originality ~ condition + (1|object) + (1|ResponseId), data= iriss_self_perceptions)
+summary(iriss_originality_mod)
+```
+
+
+```{python}
+from sentence_transformers import SentenceTransformer
+import pandas as pd
+import numpy as np
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+# Load the sentence transformer model
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Load the data
+
+data_path = '~/Git_Projects/idea_generation/data/iriss_trial_data.csv'  # Update with your actual data path
+df = pd.read_csv(data_path)
+
+# For each combination of experimental condition, object, and ResponseId, compute the semantic similarity of ideas
+results = []
+for (condition, obj, response_id), group in df.groupby(['condition', 'object', 'ResponseId']):
+    ideas = group['use'].tolist()
+
+    # Compute embeddings
+    embeddings = model.encode(ideas)
+
+    # Compute cosine similarity matrix
+    norm_embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+    similarity_matrix = np.dot(norm_embeddings, norm_embeddings.T)
+
+    # Extract upper triangle of the similarity matrix, excluding the diagonal
+    upper_tri_indices = np.triu_indices_from(similarity_matrix, k=1)
+    similarities = similarity_matrix[upper_tri_indices]
+
+    # Store results
+    for sim in similarities:
+        results.append({
+            'condition': condition,
+            'object': obj,
+            'ResponseId': response_id,
+            'similarity': sim
+        })
+
+# Convert results to DataFrame
+results_df = pd.DataFrame(results)
+summary = results_df.groupby('condition')['similarity'].agg(['mean', 'std'])
+print(summary)
+
+# Save results to CSV
+output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/iriss_semantic_similarities.csv')  # Update with your desired output path
+results_df.to_csv(output_path, index=False)
+```
+
+```{r}
+iriss_semantic_similarities <- read_csv("data/iriss_semantic_similarities.csv")
+iriss_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|ResponseId), data=iriss_semantic_similarities)
+summary(iriss_semantic_similarity_mod)
+```
+According to the linear mixed model, Passengers produce significantly more similar ideas than the Control group. 
+
+```{r}
+iriss_semantic_similarities %>% 
+  group_by(condition, ResponseId) %>% 
+  summarize(similarity = mean(similarity)) %>% 
+  ggplot(aes(x=condition, y=similarity)) +
+  geom_boxplot() +
+  stat_summary(fun="mean") 
+```
+```{r}
+emmeans(iriss_semantic_similarity_mod, pairwise ~ condition)
+```
+
