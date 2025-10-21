@@ -39,11 +39,13 @@ library(knitr)
 library(papaja) # For automatic formatting of statistics
 library(progress)
 library(emmeans)
+library(ggrepel)
+library(RColorBrewer)
 
 
 ```
 
-## Read the data
+### Read the data
 
 ```{r}
 # Remove question text rows
@@ -58,7 +60,7 @@ passed_attn_check <- pilot_data %>%
 
 ```
 
-## Basic cleaning, memory check results
+### Basic cleaning, memory check results
 
 Near the end of the survey, we asked participants to recall the gist of the instruction text for the condition to which they were assigned. They picked from the multiple choice options of "Stay in control of the AI tool" (Pilot), "Let the AI tool do the heavy lifting" (Passenger), or "Don't use AI" (Control).
 
@@ -202,7 +204,7 @@ write_csv(bubble_submissions, "data/bubble_submissions.csv")
            
 ```
 
-## Analysis of crowdworkers' subjective evaluations
+### Analysis of crowdworkers' subjective evaluations
 
 N = 99 participants
 
@@ -300,7 +302,7 @@ crowdworkers_submitters_ideas %>%
 
 ```
 
-## Compensate bonuses for those whose ideas were rated as greater than 3 out of 5 on the creativity scales
+### Compensate bonuses for those whose ideas were rated as greater than 3 out of 5 on the creativity scales
 
 7 out of the 45 pilot study participants met the criteria for a bonus.
 
@@ -616,9 +618,9 @@ iriss_self_perceptions %>%
 
 
 ```{r}
-iriss_originality_mod <- lmer(
+iriss_self_originality_mod <- lmer(
   originality ~ condition + (1|object) + (1|ResponseId), data= iriss_self_perceptions)
-summary(iriss_originality_mod)
+summary(iriss_self_originality_mod)
 ```
 
 
@@ -690,5 +692,109 @@ iriss_semantic_similarities %>%
 ```
 ```{r}
 emmeans(iriss_semantic_similarity_mod, pairwise ~ condition)
+```
+
+## Crowdsourced originality ratings
+```{r}
+iriss_manual_ratings <- read_csv("data/iriss_manual_ratings.csv") %>% 
+  filter(DistributionChannel=="anonymous") %>% 
+  filter(attn_check == "4" & attn_check_4_TEXT == "8") %>% 
+  drop_na(frisbee.0.condition) # Drop rows with missing data (experimenter error) 
+
+
+iriss_manual_ratings_long <- iriss_manual_ratings %>% 
+  rename(rater_id = ResponseId) %>% 
+  pivot_longer(cols = frisbee.0.condition:bubblewrap.4.use,
+               names_to = "stimulus_metadata",
+               values_to = "value") %>% 
+  mutate(metadata = str_extract(stimulus_metadata, "[^.]+$"),
+         stimulus_metadata = str_remove(stimulus_metadata, "\\.[^.]+$")) %>% 
+  separate_wider_delim(stimulus_metadata,
+           ".",
+           names = c("object", "trial_num")) %>% 
+  pivot_wider(
+              names_from = "metadata",
+              values_from = "value") %>% 
+  rename(submitter_id = ResponseId)
+
+# Pivot to give each creativity rating its own column
+iriss_manual_ratings_metrics <- iriss_manual_ratings_long %>% 
+  pivot_longer(cols = c_frisbee_1:u_bubble_5,
+               names_to = "trial",
+               values_to = "rating") %>% 
+  mutate(rating = as.numeric(rating)) %>% 
+  mutate(metric = str_extract(trial, "^[A-Za-z]+(?=_)")) %>% 
+  mutate(metric = case_when(metric == "c" ~ "creativity",
+                            metric == "o" ~ "originality",
+                            metric == "u" ~ "usefulness")) %>% 
+  select(rater_id, object, trial_num, submitter_id, condition, use, trial, metric, rating) %>% 
+  mutate(trial = str_remove(trial, "^._")) %>% 
+  mutate(trial_num = as.numeric(trial_num),
+         trial_num = trial_num+1) %>% 
+  unite(col="stimulus", c("object", "trial_num")) %>% 
+  mutate(trial = str_replace_all(trial, "bubble", "bubblewrap")) %>% # Check names!
+  filter(stimulus==trial) %>% 
+  pivot_wider(names_from = "metric",
+              values_from = "rating") %>% 
+  mutate(object = str_extract(stimulus, "^[A-Za-z]+")) %>% 
+  relocate(object, .after = "stimulus") %>% 
+  mutate(use_word_count = str_count(use, "\\S+")) %>% 
+  relocate(use_word_count, .after = use)
+
+```
+
+### Descriptives
+```{r}
+iriss_manual_ratings_metrics %>% 
+  group_by(condition) %>% 
+  get_summary_stats(use_word_count, type="mean_sd")
+
+iriss_manual_ratings_metrics %>% 
+  ggplot(aes(x=condition, y=use_word_count)) +
+  geom_boxplot() +
+  stat_summary(fun="mean")
+```
+
+### Originality analysis
+```{r}
+iriss_manual_ratings_metrics %>% 
+  group_by(condition) %>%
+  get_summary_stats(c(creativity, originality, usefulness), type="mean_sd") %>% 
+  arrange(variable)
+
+iriss_manual_ratings_metrics %>% 
+  group_by(condition) %>% 
+  count(originality) %>% 
+  mutate(prop=n/sum(n)) %>% 
+  ggplot(aes(x=originality, y=prop)) +
+  geom_col(color="white") +
+  facet_wrap(~condition)
+
+label_points <- iriss_manual_ratings_metrics %>% 
+  sample_n(21)
+
+ggplot(iriss_manual_ratings_metrics, aes(x=originality, y=usefulness, fill=creativity)) +
+  geom_tile(color="white") +
+  geom_label_repel(
+    data=label_points,
+    aes(label = str_wrap(paste(object, use, sep = ": "), width = 20),
+        color = condition),
+    size=2.5) +
+  theme_minimal()
+
+```
+```{r}
+iriss_originality_mod <- lmer(
+  originality ~ condition + (1|object) + (1|submitter_id), data= iriss_manual_ratings_metrics)
+summary(iriss_originality_mod)
+
+# Repeat models for creativity and usefulness
+iriss_creativity_mod <- lmer(
+  creativity ~ condition + (1|object) + (1|submitter_id), data= iriss_manual_ratings_metrics)
+summary(iriss_creativity_mod)
+
+iriss_usefulness_mod <- lmer(
+  usefulness ~ condition + (1|object) + (1|submitter_id), data= iriss_manual_ratings_metrics)
+summary(iriss_usefulness_mod)
 ```
 
