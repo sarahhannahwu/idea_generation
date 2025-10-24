@@ -41,6 +41,11 @@ library(progress)
 library(emmeans)
 library(ggrepel)
 library(RColorBrewer)
+library(ggridges)
+library(sjPlot)
+library(webshot)
+library(effectsize)
+library(lavaan)
 
 
 ```
@@ -149,7 +154,7 @@ trial_data %>%
   arrange(condition, object) 
 
 # Use sentence transformers model in Python to analyze semantic similarity
-semantic_similarities <- read_csv("data/semantic_similarities.csv")
+semantic_similarities <- read_csv("data/semantic_similarities.csv") 
 semantic_similarities_summary <- read_csv("data/semantic_similarity_summary.csv")
 
 semantic_similarities %>% 
@@ -581,25 +586,68 @@ iriss_self_perceptions <- iriss %>%
                                condition == "control" ~ "Control")) %>% 
   pivot_wider(names_from = "question",
               values_from = "rating") %>% 
-  mutate(across(c(creativity, originality, usefulness), as.numeric)) 
+  mutate(across(c(creativity, originality, usefulness), as.numeric))
 
 ```
 
+```{r}
+# Self-perceptions of creativity, originality, usefulness
+
+self_perception_outcomes <- c("originality", "creativity", "usefulness")
+
+self_perception_plots <- map(self_perception_outcomes, function(var) {
+  summary_df <- iriss_self_perceptions %>%
+    group_by(ResponseId, condition) %>%
+    summarize(value = mean(.data[[var]]), .groups = "drop")
+  
+  ggplot(summary_df, aes(x = value, y = condition, fill = condition)) +
+    geom_density_ridges(alpha = 0.6, quantile_lines = TRUE, quantile_fun = mean) +
+    xlim(c(1,5)) +
+    labs(x = var, y = "condition") +
+    theme_apa() +
+    theme(legend.position = "none")
+})
+
+# To display the plots:
+self_perception_plots[[1]]  # originality
+self_perception_plots[[2]]  # creativity
+self_perception_plots[[3]]  # usefulness
+
+# Mixed model
+
+
+```
+
+```{r}
+# Relationship between self-perception and third-party perception
+iriss_self_perceptions %>% 
+  rename(self_creativity = creativity,
+         self_originality = originality,
+         self_usefulness = usefulness) 
+
+# Correlation?
+```
 
 ```{r}
 # How unique did participants think their ideas were?
-iriss_self_perceptions %>% 
+perceived_uniqueness <- iriss_self_perceptions %>% 
   drop_na(unique) %>% 
-  ggplot(aes(x=unique)) +
-  geom_bar(position = "dodge") +
-  facet_wrap(~condition) +
+  group_by(condition) %>% 
+  count(unique) %>% 
+  mutate(prop=n/sum(n)) %>% 
+  ggplot(aes(x=unique, y=prop, fill=condition)) +
+  geom_col(position = "dodge") +
   scale_x_discrete(labels = c(
     "1" = "No one",
     "2" = "Some people",
     "3" = "Most people",
     "4" = "Everyone"
   )) +
-  labs(title="Do you think many other people came up with this idea as well?")
+  labs(x="How many people came up with this idea?",
+       y="Proportion of responses") +
+  theme_apa()
+
+ggsave("figures/uniqueness.png", plot=perceived_uniqueness)
 ```
 
 
@@ -616,13 +664,22 @@ iriss_self_perceptions %>%
   labs(y="Self-perceived originality")
 ```
 
-
+### Self perceptions
 ```{r}
+# Make sure the reference group is the Control group!
 iriss_self_originality_mod <- lmer(
   originality ~ condition + (1|object) + (1|ResponseId), data= iriss_self_perceptions)
 summary(iriss_self_originality_mod)
-```
 
+iriss_self_creativity_mod <- lmer(
+  creativity ~ condition + (1|object) + (1|ResponseId), data= iriss_self_perceptions)
+summary(iriss_self_creativity_mod)
+
+iriss_self_usefulness_mod <- lmer(
+  usefulness ~ condition + (1|object) + (1|ResponseId), data= iriss_self_perceptions)
+summary(iriss_self_usefulness_mod)
+```
+Pilots perceived their ideas as more useful than the other participants. 
 
 ```{python}
 from sentence_transformers import SentenceTransformer
@@ -675,16 +732,22 @@ output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/iriss_sema
 results_df.to_csv(output_path, index=False)
 ```
 
+## H2: Semantic Similarity
 ```{r}
-iriss_semantic_similarities <- read_csv("data/iriss_semantic_similarities.csv")
-iriss_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|ResponseId), data=iriss_semantic_similarities)
+iriss_semantic_similarities <- read_csv("data/iriss_semantic_similarities.csv") %>% 
+  rename(submitter_id = ResponseId)
+iriss_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|submitter_id), data=iriss_semantic_similarities)
 summary(iriss_semantic_similarity_mod)
+
+sjPlot::tab_model(iriss_semantic_similarity_mod)
+
+
 ```
 According to the linear mixed model, Passengers produce significantly more similar ideas than the Control group. 
 
 ```{r}
 iriss_semantic_similarities %>% 
-  group_by(condition, ResponseId) %>% 
+  group_by(condition, submitter_id) %>% 
   summarize(similarity = mean(similarity)) %>% 
   ggplot(aes(x=condition, y=similarity)) +
   geom_boxplot() +
@@ -739,8 +802,16 @@ iriss_manual_ratings_metrics <- iriss_manual_ratings_long %>%
   mutate(object = str_extract(stimulus, "^[A-Za-z]+")) %>% 
   relocate(object, .after = "stimulus") %>% 
   mutate(use_word_count = str_count(use, "\\S+")) %>% 
-  relocate(use_word_count, .after = use)
+  relocate(use_word_count, .after = use) 
 
+# Select process variables from full dataset
+process_vars <- iriss_trial_data %>% 
+  rename(submitter_id = ResponseId) %>% 
+  select(submitter_id, object, use, starts_with("conv_with_ai"), starts_with("consideration_aid"), starts_with("intrinsic_motivation"))
+
+
+
+write_csv(iriss_manual_ratings_metrics, "data/iriss_manual_ratings_metrics.csv")
 ```
 
 ### Descriptives
@@ -753,7 +824,16 @@ iriss_manual_ratings_metrics %>%
   ggplot(aes(x=condition, y=use_word_count)) +
   geom_boxplot() +
   stat_summary(fun="mean")
+
+cor.test(iriss_manual_ratings_metrics$use_word_count, iriss_manual_ratings_metrics$originality)
+
+ggplot(iriss_manual_ratings_metrics, aes(x=use_word_count, y=originality, color=condition)) +
+  geom_jitter() +
+  geom_smooth(method="lm")
+
+
 ```
+Higher word count is associated with greater originality. 
 
 ### Originality analysis
 ```{r}
@@ -769,20 +849,80 @@ iriss_manual_ratings_metrics %>%
   ggplot(aes(x=originality, y=prop)) +
   geom_col(color="white") +
   facet_wrap(~condition)
+```
 
+### Heatmap of creativity "sweet spots"
+```{r}
 label_points <- iriss_manual_ratings_metrics %>% 
-  sample_n(21)
+  group_by(condition) %>% 
+  sample_n(5)
 
-ggplot(iriss_manual_ratings_metrics, aes(x=originality, y=usefulness, fill=creativity)) +
+# Might want to change the colors 
+ggplot(iriss_manual_ratings_metrics, aes(x=originality, y=usefulness, fill=as.factor(creativity))) +
   geom_tile(color="white") +
   geom_label_repel(
     data=label_points,
-    aes(label = str_wrap(paste(object, use, sep = ": "), width = 20),
-        color = condition),
-    size=2.5) +
-  theme_minimal()
+    aes(label = str_wrap(paste(object, use, sep = ": "), width = 20)),
+    size=2.5,
+    color="white",
+    alpha=.75) +
+  facet_wrap(~condition) +
+  scale_fill_viridis_d() +
+  theme_apa() 
+```
+
+
+```{r}
+iriss_manual_ratings_metrics %>% 
+  group_by(submitter_id, condition) %>% 
+  summarize(originality=mean(originality)) %>%
+  ggplot(aes(x=originality, y=condition)) +
+  geom_density_ridges()
+```
+
+### Plots
+```{r}
+outcomes <- c("originality", "creativity", "usefulness")
+
+plots <- map(outcomes, function(var) {
+  summary_df <- iriss_manual_ratings_metrics %>%
+    group_by(submitter_id, condition) %>%
+    summarize(value = mean(.data[[var]]), .groups = "drop")
+  
+  ggplot(summary_df, aes(x = value, y = condition, fill = condition)) +
+    geom_density_ridges(alpha = 0.6, quantile_lines = TRUE, quantile_fun = mean) +
+    xlim(c(1,5)) +
+    labs(x = var, y = "Condition") +
+    theme_apa() +
+    theme(legend.position = "none")
+})
+
+# To display the plots:
+plots[[1]]  # originality
+plots[[2]]  # creativity
+plots[[3]]  # usefulness
+
+ggsave("figures/originality.png", plot = plots[[1]])
+ggsave("figures/creativity.png", plot = plots[[2]])
+ggsave("figures/usefulness.png", plot = plots[[3]])
+
+
 
 ```
+```{r}
+semantic_similarity <- ggplot(iriss_semantic_similarities, aes(x=similarity, y=condition, fill=condition)) +
+  geom_density_ridges(alpha=.6,
+                      quantile_lines = TRUE,
+                      quantile_fun = mean) +
+  scale_x_continuous(breaks=seq(-.5, 1, by=.1)) +
+  labs(x="cosine similarity") +
+  theme_apa() +
+  theme(legend.position = "none") 
+
+ggsave("figures/semantic_similarity.png", plot=semantic_similarity)
+```
+
+## H1
 ```{r}
 iriss_originality_mod <- lmer(
   originality ~ condition + (1|object) + (1|submitter_id), data= iriss_manual_ratings_metrics)
@@ -796,5 +936,82 @@ summary(iriss_creativity_mod)
 iriss_usefulness_mod <- lmer(
   usefulness ~ condition + (1|object) + (1|submitter_id), data= iriss_manual_ratings_metrics)
 summary(iriss_usefulness_mod)
+```
+
+Which conditions contributed the most creative ideas?
+
+```{r}
+iriss_manual_ratings_metrics %>% 
+  filter(originality > 3 & usefulness > 3) %>% 
+  count(condition) 
+```
+
+Passengers produced the most, followed by Pilots, then participants in the control condition.
+
+### Most common uses for each object
+```{r}
+iriss_manual_ratings_metrics %>% 
+  mutate(use = str_to_lower(use)) %>% 
+  group_by(object) %>% 
+  count(use) %>% 
+  arrange(desc(n)) %>% 
+  print(n=30)
+```
+
+
+### Noncompliance in AI Access conditions
+```{r}
+no_chats_pilot <- read_csv("data/pilot_no_first_message.csv")
+
+no_chats_passenger <- read_csv("data/passenger_no_first_message.csv")
+
+noncompliant <- bind_rows(no_chats_pilot, no_chats_passenger) %>% 
+  rename(submitter_id = participant_id)
+
+# Number of noncompliant conversations
+noncompliant %>% 
+  group_by(condition) %>% 
+  summarize(n_distinct(submitter_id)) 
+
+
+
+# Exclude the noncompliant trials from the analysis
+compliant_trials <- iriss_manual_ratings_metrics %>% 
+  anti_join(noncompliant, by=c("submitter_id", "object")) %>% 
+  left_join(process_vars, by=c("submitter_id", "object", "use"), relationship="many-to-many")
+
+compliant_originality_mod <- lmer(
+  originality ~ condition + (1|object) + (1|submitter_id), data= compliant_trials)
+summary(compliant_originality_mod)   
+
+compliant_creativity_mod <- lmer(
+  creativity ~ condition + (1|object) + (1|submitter_id), data= compliant_trials)
+summary(compliant_creativity_mod)   
+
+compliant_usefulness_mod <- lmer(
+  usefulness ~ condition + (1|object) + (1|submitter_id), data= compliant_trials)
+summary(compliant_usefulness_mod)  
+
+compliant_similarities <- iriss_semantic_similarities %>% 
+  anti_join(noncompliant, by=c("submitter_id", "object"))
+
+compliant_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|submitter_id), data=compliant_similarities)
+summary(compliant_semantic_similarity_mod)
+
+anova(compliant_semantic_similarity_mod)
+F_to_eta2(4.45, df=2, df_error=120)
+eta_squared(compliant_semantic_similarity_mod)
+
+
+```
+Around 24% of the Passenger conversations did not use AI and around 38% of the Pilot conversations did not use AI. Excluding the noncompliant trials did not change the results.
+
+```{r}
+# Factor analysis of intrinsic motivation items
+
+intrinsic_motivation <- ' f =~ intrinsic_motivation_1 + intrinsic_motivation_2 + intrinsic_motivation_3 + intrinsic_motivation_4' 
+
+onefac4items <- cfa(intrinsic_motivation, data=compliant_trials)
+summary(onefac4items, standardized=TRUE)
 ```
 
