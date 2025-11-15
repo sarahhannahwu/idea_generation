@@ -52,6 +52,11 @@ library(sjstats)
 library(ltm)
 library(wCorr)
 library(rstatix)
+library(pwr)
+library(lavaan)
+library(mediation)
+library(QuantPsyc)
+library(gt)
 
 
 ```
@@ -60,11 +65,11 @@ library(rstatix)
 
 ```{r}
 # Remove question text rows
-high-agency_data <- read_csv("data/high-agency_2025.09.11.csv") %>% 
+pilot_data <- read_csv("data/pilot_2025.09.11.csv") %>%
   slice(-(1:2))
 
 # Filter for participants who passed attention check
-passed_attn_check <- high-agency_data %>% 
+passed_attn_check <- pilot_data %>% 
   filter(attn_check == "4" & attn_check_4_TEXT == "8")
 
 
@@ -80,7 +85,7 @@ Near the end of the survey, we asked participants to recall the gist of the inst
 ```{r}
 # Rename condition column
 
-high-agency_data_renamed <- passed_attn_check %>% 
+pilot_data_renamed <- passed_attn_check %>% 
   rename(condition = FL_3_DO) %>% 
   relocate(condition, .after = attn_check_4_TEXT) %>% 
   mutate(condition = case_when(condition == "GuidedInstructions" ~ "high-agency",
@@ -103,7 +108,7 @@ memory_check <- high-agency_data_renamed %>%
 
 
 # Convert to long format
-trial_data <- high-agency_data_renamed %>% 
+trial_data <- pilot_data_renamed %>% 
   pivot_longer(names_to = "trial",
                 values_to = "use",
                 cols = starts_with(c("high-agency", "pass", "control"))) %>% 
@@ -549,7 +554,7 @@ submitter_demographics <- iriss %>%
                           race == "6" ~ "Asian-American",
                           race == "7" ~ "Multiracial or self-described")) %>% 
   mutate(race = fct_infreq(race)) %>% 
-  select(submitter_id, age, gender, race) 
+  dplyr::select(submitter_id, age, gender, race) 
 
 submitter_demographics %>% 
   tbl_summary(include = c(age, gender, race),
@@ -909,7 +914,7 @@ iriss_manual_ratings_metrics <- iriss_manual_ratings_long %>%
 
 # Select process variables from full dataset
 process_vars <- iriss_trial_data %>% 
-  select(submitter_id, object, use, starts_with("conv_with_ai"), starts_with("consideration_aid"), starts_with("intrinsic_motivation"))
+  dplyr::select(submitter_id, object, use, starts_with("conv_with_ai"), starts_with("consideration_aid"), starts_with("intrinsic_motivation"))
 
 
 
@@ -1139,7 +1144,17 @@ iriss_manual_ratings_metrics %>%
   count(condition) 
 ```
 
-low-agencys produced the most, followed by high-agencys, then participants in the control condition.
+low-agency participants produced the most creative ideas, followed by high-agency participants, then participants in the control condition.
+
+
+What were the highest-performing ideas?
+```{r}
+iriss_manual_ratings_metrics %>% 
+  arrange(desc(creativity)) %>% 
+  dplyr::select(object, submitter_id, condition, use, creativity, originality, usefulness) %>% 
+  print(n=100)
+```
+
 
 ### Most common uses for each object
 
@@ -1156,11 +1171,11 @@ iriss_manual_ratings_metrics %>%
 
 This is JUST on the submission side. Here, we identify the trials on which high-agencys and low-agencys did not use AI, regardless of whether ideas from those conversations got evaluated.
 ```{r}
-no_chats_high-agency <- read_csv("data/high-agency_no_first_message.csv")
+no_chats_high_agency <- read_csv("data/pilot_no_first_message.csv")
 
-no_chats_low-agency <- read_csv("data/low-agency_no_first_message.csv")
+no_chats_low_agency <- read_csv("data/passenger_no_first_message.csv")
 
-noncompliant_conversations <- bind_rows(no_chats_high-agency, no_chats_low-agency) %>% 
+noncompliant_conversations <- bind_rows(no_chats_high_agency, no_chats_low_agency) %>% 
   rename(submitter_id = participant_id)
 
 
@@ -1184,9 +1199,14 @@ evaluated_conversations <- iriss_manual_ratings_metrics %>%
   group_by(submitter_id, condition, object) %>% 
   summarize(aggregated_uses = paste(use, collapse = "; "))
 
-unevaluated_conversations <- iriss_conversations %>% 
-  anti_join(evaluated_conversations, by=c("submitter_id", "condition", "object")) 
+# unevaluated_conversations <- iriss_conversations %>% 
+#   anti_join(evaluated_conversations, by=c("submitter_id", "condition", "object"))
+```
 
+
+### Evaluated, compliant conversations
+
+```{r}
 # Exclude the noncompliant conversations from the analysis
 evaluated_compliant_conversations <- evaluated_conversations %>% 
   anti_join(noncompliant_conversations, by=c("submitter_id", "condition", "object"))
@@ -1202,55 +1222,57 @@ write_csv(evaluated_compliant_conversations, "data/evaluated_compliant_conversat
 
 iriss_conversations %>% 
   anti_join(noncompliant_conversations, by=c("submitter_id", "object"))
-# compliant_trials <- iriss_manual_ratings_metrics %>% 
-#   anti_join(noncompliant, by=c("submitter_id", "object")) %>% 
-#   left_join(process_vars, by=c("submitter_id", "object", "use"), relationship="many-to-many") %>% 
+# 
+# compliant_trials <- iriss_manual_ratings_metrics %>%
+#   anti_join(noncompliant, by=c("submitter_id", "object")) %>%
+#   left_join(process_vars, by=c("submitter_id", "object", "use"), relationship="many-to-many") %>%
 #   mutate(across(conv_with_ai_1:intrinsic_motivation_4, as.numeric),
 #          intrinsic_motivation_mean = rowMeans(
 #       across(intrinsic_motivation_1:intrinsic_motivation_4),
 #       na.rm = TRUE
-#     )) %>% 
+#     )) %>%
 #     mutate(
 #          conv_with_ai_mean = rowMeans(
 #       across(conv_with_ai_1:conv_with_ai_3),
 #       na.rm = TRUE
-#     )) %>% 
+#     )) %>%
 #     mutate(
 #          consideration_aid_mean = rowMeans(
 #       across(consideration_aid_1:consideration_aid_3),
 #       na.rm = TRUE
-#     )) 
+#     ))
 
-compliant_trials %>% 
-  distinct(condition, submitter_id, object) %>% 
-  filter(condition != "Control") %>% 
-  count(condition)
-
-compliant_trials %>% 
-  distinct(condition, submitter_id) %>% 
-  count(condition)
+# compliant_trials %>% 
+#   distinct(condition, submitter_id, object) %>% 
+#   filter(condition != "Control") %>% 
+#   count(condition)
+# 
+# compliant_trials %>% 
+#   distinct(condition, submitter_id) %>% 
+#   count(condition)
 
 # Which participants were completely excluded because all of their trials were noncompliant?
 
 
-excluded_participants <- noncompliant %>%
-  count(submitter_id, condition) %>%
-  filter(n==3) %>% 
-  arrange(condition)
+# excluded_participants <- noncompliant %>%
+#   count(submitter_id, condition) %>%
+#   filter(n==3) %>% 
+#   arrange(condition)
+# 
+# write_csv(excluded_participants, "data/fully_excluded_participants.csv")
+# 
+# excluded_participants %>% 
+#   count(condition)
+# 
+# # Which participants had AT LEAST ONE noncompliant trial?
+# flagged_participants <- noncompliant %>%
+#   distinct(submitter_id, condition)
 
-write_csv(excluded_participants, "data/fully_excluded_participants.csv")
 
-excluded_participants %>% 
-  count(condition)
-
-# Which participants had AT LEAST ONE noncompliant trial?
-flagged_participants <- noncompliant %>%
-  distinct(submitter_id, condition)
-
-
-evaluated_compliant_ideas <- iriss_trial_data %>% 
-  anti_join(unevaluated_conversations, by=c("submitter_id", "object")) %>% 
-  anti_join(noncompliant_conversations, by=c("submitter_id", "object"))
+evaluated_compliant_ideas <- evaluated_compliant_conversations %>% 
+  separate_rows(aggregated_uses, sep = "; ") %>% 
+  rename(use="aggregated_uses") %>% 
+  distinct(submitter_id, condition, object, use)
 ```
 
 ### Evaluated compliant ideas
@@ -1258,6 +1280,17 @@ evaluated_compliant_ideas <- iriss_trial_data %>%
 ```{r}
 write_csv(evaluated_compliant_ideas, "data/evaluated_compliant_ideas.csv")
 ```
+
+```{r}
+evaluated_compliant_ideas %>% 
+  mutate(use = str_to_lower(use)) %>% 
+  group_by(condition, object) %>% 
+  count(use) %>% 
+  arrange(desc(n)) %>% 
+  print(n=1500)
+```
+
+
 
 
 ```{python}
@@ -1324,6 +1357,23 @@ similarity_demographics <- left_join(compliant_similarities, demographics_recode
 
 ```
 
+### Top-performing ideas by condition
+
+```{r}
+
+iriss_manual_ratings_metrics %>% 
+  anti_join(noncompliant_conversations) %>% 
+  group_by(condition) %>% 
+  arrange(    
+    desc(creativity),
+    desc(originality),
+    desc(usefulness)) %>% 
+  dplyr::select(object, submitter_id, condition, use, creativity, originality, usefulness) %>% 
+  print(n=100)
+```
+
+```
+
 ### Linear mixed model with compliant data
 ```{r}
 
@@ -1347,13 +1397,13 @@ anova(compliant_usefulness_mod, type=3)
 emmeans(compliant_usefulness_mod, pairwise ~ condition)
 
 
-sjPlot::tab_model(compliant_creativity_mod, compliant_originality_mod, compliant_usefulness_mod),
+sjPlot::tab_model(compliant_creativity_mod, compliant_originality_mod, compliant_usefulness_mod,
                   pred.labels = c("Intercept",
                                   "Low-Agency Condition",
                                   "High-Agency Condition",
                                   "Age",
                                   "Gender (Female)",
-                                  "Race (White)",
+                                  "Race (White)"),
                   string.ci = "95% CI",
                   dv.labels = c("Creativity", "Originality", "Usefulness"))
 
@@ -1362,6 +1412,11 @@ anova(compliant_originality_mod)
 F_to_eta2(0.36, df=2, df_error=124.38)
 ```
 
+```{r}
+evaluated_compliant_ideas %>% 
+  group_by(condition) %>% 
+  arrange(desc(n))
+```
 
 ```{r}
 compliant_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|submitter_id), data=similarity_demographics)
@@ -1391,7 +1446,6 @@ sjPlot::tab_model(compliant_similarity_demographics_mod,
 
 compliant_similarities <- iriss_semantic_similarities %>% 
   anti_join(noncompliant_conversations, by=c("submitter_id", "object")) %>% 
-  anti_join(unevaluated_conversations, by=c("submitter_id", "object")) %>% 
   mutate(condition=case_when(condition=="Pilot"~"High-Agency",
                              condition=="Passenger"~"Low-Agency",
                              condition=="Control"~"Control"))
@@ -1536,6 +1590,80 @@ ggsave("figures/compliant_semantic_similarity.png", plot=compliant_semantic_simi
 Around 24% of the low-agency conversations did not use AI and around 38% of the high-agency conversations did not use AI. Excluding the noncompliant trials did not change the results.
 
 ```{r}
+similarities_means_plot <- compliant_similarities %>% 
+  mutate(condition= fct_relevel(condition, c("Low-Agency", "High-Agency", "Control"))) %>% 
+  group_by(condition) %>% 
+  get_summary_stats(similarity, type="mean_se") %>% 
+  ggplot(aes(x=condition, y=mean, color=condition)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean-se, ymax = mean+se))+
+  ylim(c(0,1))
+```
+
+
+```{r}
+# Table of descriptives
+similarities_descriptives <- compliant_similarities %>% 
+  group_by(condition) %>% 
+  get_summary_stats(similarity, type="mean_sd") %>% 
+  select(-c(variable, n)) %>% 
+  gt() %>% 
+  fmt_number(
+    columns = c(mean, sd),
+    decimals = 2
+  ) %>% 
+  cols_label(
+    condition = "Condition",
+    mean = "Mean",
+    sd = "SD"
+  ) %>% 
+  tab_header(
+    title = "Similarity Scores by Condition"
+  ) %>% 
+  tab_options(
+    table.border.top.color = "white",
+    table.border.bottom.color = "white"
+  ) %>% 
+  opt_table_font(stack = "geometric-humanist") %>% 
+  tab_style(
+  style = list(
+    cell_text(weight = "bold")
+  ),
+  locations = cells_column_labels()
+)
+
+similarities_descriptives
+
+
+
+
+
+```
+
+
+Who were the highest-performing participants?
+```{r}
+iriss_manual_ratings_metrics %>% 
+  anti_join(noncompliant_conversations, by=c("submitter_id", "object")) %>% 
+  group_by(submitter_id) %>% 
+  summarize(mean_creativity = mean(creativity)) %>% 
+  arrange(desc(mean_creativity))
+
+
+most_creative_participants <- iriss_manual_ratings_metrics %>% 
+  filter(submitter_id %in% c("R_626PnHWHD8OebPr",
+                             "R_665Usq3Hx2qiS2y",
+                             "R_1C4pbfUTsEaLjCV",
+                             "R_5ebqE9oR2LkKvO9",
+                             "R_7wcOe7LsUrh7hzH",
+                             "R_5z92Djt5TP9CJBb",
+                             "R_7nZ3ULt8wE34mW6",
+                             "R_6dB0PTZKZgdwBAS"))
+  
+```
+
+
+```{r}
 # Factor analysis of intrinsic motivation items
 
 intrinsic_motivation <- ' f =~ intrinsic_motivation_1 + intrinsic_motivation_2 + intrinsic_motivation_3 + intrinsic_motivation_4' 
@@ -1602,7 +1730,7 @@ t.test(compliant_submitters$consideration_aid_mean[compliant_submitters$conditio
 ### Self-Perception
 
 ```{r}
-compliant_self_perception <- iriss_self_perceptions %>% 
+compliant_self_perception <- iriss_self_perceptions %>%
   anti_join(noncompliant_conversations, by=c("submitter_id", "object")) %>% 
   anti_join(unevaluated_conversations,by=c("submitter_id", "object")) %>% 
   left_join(demographics_recoded, by="submitter_id")
@@ -1645,8 +1773,6 @@ self_perception_ideas <- compliant_self_perception %>%
   mutate(object=if_else(object=="bubble", "bubblewrap", object))
 
 self_other_perceptions <- left_join(x=self_perception_ideas, y=iriss_manual_ratings_metrics) %>% 
-  anti_join(unevaluated_conversations, by=c("submitter_id", "object")) %>% 
-  anti_join(noncompliant_conversations, by=c("submitter_id", "object")) %>%
   drop_na(creativity, originality, usefulness) %>% 
   group_by(submitter_id, condition, object, use) %>% 
   summarize(self_creativity = mean(self_creativity), 
@@ -1664,12 +1790,18 @@ cor.test(self_other_perceptions$self_originality, self_other_perceptions$origina
 
 cor.test(self_other_perceptions$self_usefulness, self_other_perceptions$usefulness)
 
+
+```
+
+
+```{r}
 # Does the difference in self-perceived vs. other-perceived creativity vary by condition?
 
 perception_diffs <- self_other_perceptions %>% 
   mutate(creativity_diff = self_creativity-creativity,
          originality_diff = self_originality-originality,
          usefulness_diff = self_usefulness-usefulness)
+
 
 perception_diffs %>% 
   group_by(condition) %>% 
@@ -1710,7 +1842,8 @@ summary(originality_diff_anova)
 usefulness_diff_anova <- aov(usefulness_diff ~ condition, data=perception_diff_participants)
 summary(usefulness_diff_anova)
 
-
+# # Predict difference score from condition, submitter ID, and object
+# lmer(creativity_diff ~ condition + (1|submitter_id) + (1|object), data=perception_diffs) 
 ```
 
 
@@ -1762,7 +1895,7 @@ intent %>%
   summarize(mean_doing = mean(doing),
             sd_doing = sd(doing))
 
-t.test
+
 ```
 
 ### Direct Asks
@@ -1776,7 +1909,6 @@ direct_asks <- read_csv("data/direct_asks.csv") %>%
 # Does the proportion of direct asks correlate with person-level homogeneity?
 
 participant_compliant_similarity <- compliant_similarities %>%
-  anti_join(unevaluated_conversations, by=c("submitter_id", "object")) %>% 
   filter(condition %in% c("Low-Agency", "High-Agency")) %>% 
   group_by(submitter_id, condition) %>% 
   summarize(mean_similarity = mean(similarity))
@@ -1790,18 +1922,80 @@ ggplot(direct_ask_similarity, aes(x=direct_ask_proportion,y=mean_similarity)) +
 
 cor.test(direct_ask_similarity$direct_ask_proportion, direct_ask_similarity$mean_similarity, method="spearman")
 
-direct_ask_sim_model <- lm(mean_similarity ~ direct_ask_proportion + condition + direct_ask_proportion*condition, data = direct_ask_similarity)
+direct_ask_sim_model <- lm(mean_similarity ~ direct_ask_proportion*condition, data = direct_ask_similarity)
 summary(direct_ask_sim_model)
 
 
 ggplot(direct_ask_similarity, aes(x=direct_ask_binary, y=mean_similarity)) +
-  geom_point()
+  geom_point() 
 
+# Logistic regression predicting direct ask from condition
+direct_ask.log <- glm(direct_ask_binary ~ condition, family = "binomial", data=direct_ask_similarity)
+summary(direct_ask.log)
+exp(coef(direct_ask.log))
+
+# Does direct ask binary predict mean similarity?
+
+direct_ask.lm <- lm(mean_similarity ~ direct_ask_binary*condition, data=direct_ask_similarity)
+summary(direct_ask.lm)
+```
+
+## Mediation Analysis
+
+```{r}
+# Convert Mindset to numeric (0 = Low-Agency, 1 = High-Agency)
+direct_ask_similarity$condition_numeric <- if_else(direct_ask_similarity$condition == "High-Agency", 1, 0)
+
+# ============================================================
+# METHOD 1: Using the mediation package (Baron & Kenny approach)
+# ============================================================
+
+# Step 1: Total effect (c path): X -> Y
+model_total <- lm(mean_similarity ~ condition_numeric, data = direct_ask_similarity)
+summary(model_total)
+
+# Step 2: Effect on mediator (a path): X -> M
+model_mediator <- lm(direct_ask_binary ~ condition_numeric, data = direct_ask_similarity)
+summary(model_mediator)
+
+# Step 3: Direct effect (b and c' paths): X + M -> Y
+model_outcome <- lm(mean_similarity ~ condition_numeric + direct_ask_binary, data = direct_ask_similarity)
+summary(model_outcome)
+
+# Mediation analysis with bootstrapping (recommended)
+set.seed(123)  # for reproducibility
+mediation_results <- mediate(
+  model_mediator,
+  model_outcome,
+  treat = "condition_numeric",
+  mediator = "direct_ask_binary",
+  boot = TRUE,
+  sims = 5000
+)
+
+summary(mediation_results)
+
+```
+Direct Ask doesn't seem to mediate the relationship between mindset and mean within-person similarity. 
+
+```{r}
 biserial.cor(direct_ask_similarity$mean_similarity, direct_ask_similarity$direct_ask_binary)
 cor.test(direct_ask_similarity$mean_similarity, direct_ask_similarity$direct_ask_binary)
 
 weightedCorr(direct_ask_similarity$mean_similarity, direct_ask_similarity$direct_ask_binary, method="Pearson", weights=direct_ask_similarity$total_count)
 
+
+```
+
+
+## Planning for Main Study
+
+```{r}
+# Omnibus ANOVA
+pwr.anova.test(k = 3, f = 0.25, sig.level = 0.05, power = 0.95)
+
+# Pairwise comparisons
+pwr.t.test(d = 0.5, sig.level = 0.017, power = 0.95, type = "two.sample")
 
 ```
 
