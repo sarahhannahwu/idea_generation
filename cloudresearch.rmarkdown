@@ -1,0 +1,379 @@
+```{r}
+library(tidyverse)
+library(dplyr)
+library(rstatix)
+library(qualtRics)
+library(lme4)
+library(jsonlite)
+library(lubridate)
+```
+
+
+```{r}
+cloudresearch <- fetch_survey(surveyID = "SV_8ccaK54JnClG1Bs",
+                              label = FALSE,
+                              convert = FALSE) %>% 
+  filter(attn_check == "4" &
+         attn_check_4_TEXT == "8")
+
+time_limit <- cloudresearch %>% 
+  filter(`Duration (in seconds)`< 1800)
+
+```
+
+```{r}
+# Memory check
+cloudresearch %>% 
+  select(Condition, memory_check) %>% 
+  mutate(memory_check = case_when(memory_check == 1 ~ "high-agency",
+                                  memory_check == 2 ~ "low-agency",
+                                  memory_check == 3 ~ "unstructured",
+                                  memory_check == 4 ~ "control")) %>% 
+  count(Condition == memory_check)
+
+
+# PIVOT
+cleaned_names <- time_limit %>% 
+  rename(control_frisbee_unique = control_fris_unique,
+         control_bubblewrap_unique = control_bubb_unique,
+         bubblewrap_self_creative = bubble_self_creative,
+         bubblewrap_self_original = bubble_self_original, 
+         bubblewrap_self_useful = bubble_self_useful,
+         control_bubblewrap_self_creative = control_bubble_self_1,
+         control_bubblewrap_self_original = control_bubble_self_2,
+         control_bubblewrap_self_useful = control_bubble_self_3,
+         control_frisbee_self_creative = control_frisbee_self_1,
+         control_frisbee_self_original = control_frisbee_self_2,
+         control_frisbee_self_useful = control_frisbee_self_3,
+         control_brick_self_creative = control_brick_self_1,
+         control_brick_self_original = control_brick_self_2,
+         control_brick_self_useful = control_brick_self_3,
+         Black = race_1,
+         American_Indian = race_2,
+         White = race_3,
+         Native_Hawaiian = race_4,
+         Hispanic_Latino = race_5,
+         Asian = race_6,
+         self_describe = race_7,
+         unknown_race = race_8,
+         submitter_id=ResponseId) %>% 
+  group_by(submitter_id) %>% 
+  
+  # Step 1: Replace NA with 0 for ALL race columns at once
+  # (Update this list with all your actual race column names)
+  mutate(across(c(Black:unknown_race), ~replace_na(., 0))) %>% 
+  
+  # Step 2: Create a sum column to easily identify Multiracial participants
+  mutate(race_sum = Black+American_Indian+White+Native_Hawaiian+Hispanic_Latino+Asian+self_describe+unknown_race) %>% 
+  
+  # Step 3: Assign the final text label
+  mutate(race = case_when(
+    race_sum > 1 ~ "Multiracial",   # IMPORTANT: This must be first!
+    race_sum == 0 ~ "Unknown/Prefer not to say",
+    Black == 1    ~ "Black",
+    American_Indian == 1    ~ "American_Indian",
+    White == 1    ~ "White",
+    Native_Hawaiian == 1   ~ "Native_Hawaiian",
+    Hispanic_Latino == 1    ~ "Hispanic_Latino",
+    Asian == 1 ~ "Asian",
+    self_describe == 1 ~ "self_describe",
+    unknown_race == 1 ~ "unknown_race",
+    TRUE          ~ "Error" # Failsafe
+  ))
+```
+
+
+```{r}
+trials <- cleaned_names %>% 
+  pivot_longer(
+    cols = c(
+      matches("^ai_[a-zA-Z]+_[0-9]+$"), 
+      matches("^control_[a-zA-Z]+_[0-9]+$")
+    ),
+    names_to = "trial",
+    values_to = "use",
+    # This regex looks for ai_ OR control_ and discards it, keeping the rest
+    names_pattern = "^(?:ai|control)_(.*)$", 
+    values_drop_na = TRUE
+  ) %>% 
+  pivot_longer(
+    cols = matches("^(ai|control)_[a-zA-Z]+_selected$"),
+    names_to = "selected_object",
+    names_pattern = "^(?:ai|control)_(.*)_selected$",
+    values_to = "selected_idea",
+    values_drop_na = TRUE
+  ) %>% 
+  pivot_longer(
+    cols = contains("self", ignore.case = FALSE),
+    names_to = "selected_trial",
+    values_to = "self_evaluation",
+    values_drop_na = TRUE
+  ) %>% 
+  filter(str_detect(selected_trial, fixed(selected_object))) %>%  # Check if the objects are the same
+  mutate(metric = str_extract(selected_trial, "creative|original|useful")) %>% 
+  select(-c(FL_3_DO_FL_100:`FL_96_DO_ControlBubbleSelf-Rating`)) %>% 
+  pivot_wider(id_cols = c(submitter_id, Condition, trial, use, selected_object, selected_idea, effort_1, age, gender, White, race),
+              names_from = "metric",
+              values_from = "self_evaluation") %>% 
+  separate(col = "trial",
+           into = c("object",
+                    "trial_num")) 
+  
+```
+
+## Demographics
+
+```{r}
+cleaned_names %>% 
+  get_summary_stats(age, type="mean_sd")
+
+
+cleaned_names %>% 
+  group_by(race) %>% 
+  count()
+```
+```{r}
+ideas_to_evaluate <- cleaned_names %>% 
+  select(submitter_id, Condition, matches("(frisbee|bubblewrap|brick)_[0-9]+$")) %>% 
+  ungroup() %>% 
+  mutate(ID = row_number()) %>% 
+  unite(col = "frisbee_1",
+        ends_with("frisbee_1"),
+        na.rm = TRUE) %>% 
+  unite(col = "frisbee_2",
+        ends_with("frisbee_2"),
+        na.rm = TRUE) %>% 
+  unite(col = "frisbee_3",
+        ends_with("frisbee_3"),
+        na.rm = TRUE) %>% 
+  unite(col = "frisbee_4",
+        ends_with("frisbee_4"),
+        na.rm = TRUE) %>% 
+  unite(col = "frisbee_5",
+        ends_with("frisbee_5"),
+        na.rm = TRUE) %>% 
+  unite(col = "brick_1",
+        ends_with("brick_1"),
+        na.rm = TRUE) %>% 
+  unite(col = "brick_2",
+        ends_with("brick_2"),
+        na.rm = TRUE) %>% 
+  unite(col = "brick_3",
+        ends_with("brick_3"),
+        na.rm = TRUE) %>% 
+  unite(col = "brick_4",
+        ends_with("brick_4"),
+        na.rm = TRUE) %>% 
+  unite(col = "brick_5",
+        ends_with("brick_5"),
+        na.rm = TRUE) %>% 
+  unite(col = "bubblewrap_1",
+        ends_with("bubblewrap_1"),
+        na.rm = TRUE) %>% 
+  unite(col = "bubblewrap_2",
+        ends_with("bubblewrap_2"),
+        na.rm = TRUE) %>% 
+  unite(col = "bubblewrap_3",
+        ends_with("bubblewrap_3"),
+        na.rm = TRUE) %>% 
+  unite(col = "bubblewrap_4",
+        ends_with("bubblewrap_4"),
+        na.rm = TRUE) %>% 
+  unite(col = "bubblewrap_5",
+        ends_with("bubblewrap_5"),
+        na.rm = TRUE) 
+
+
+# For each idea category, randomize the order in which it appears in the column
+
+generate_qualtrics_list <- function(data) {
+  data %>%
+    # 1. Convert specific columns to a single list (Long Format)
+    # Adjust the 'cols' argument to match your specific column names
+    pivot_longer(
+      cols = matches("(frisbee|bubblewrap|brick)_[0-9]+$"), 
+      names_to = "original_col", 
+      values_to = "idea_text"
+    ) %>%
+    
+    # 2. Clean empty cells (if some participants had fewer ideas than others)
+    filter(!is.na(idea_text) & idea_text != "") %>%
+    
+    # 3. Create a clean "Prompt" column for Qualtrics (removes the "_1", "_2")
+    # This becomes Field 2 in Qualtrics so raters know the object context
+    mutate(prompt_object = str_extract(original_col, "^[a-z]+")) %>%
+    
+    # 4. Randomize the order of the rows
+    slice_sample(prop = 1) %>%
+    
+    # 5. Select only what you need for Qualtrics Loop & Merge
+    # Order: Field 1 (Idea), Field 2 (Object), Field 3 (Original Column/ID)
+    select(submitter_id, Condition, idea_text, prompt_object, original_col)
+}
+
+# Example Usage:
+qualtrics_ready_data <- generate_qualtrics_list(ideas_to_evaluate)
+
+# PRO TIP: Copy directly to clipboard to paste into Qualtrics
+# library(clipr)
+# write_clip(qualtrics_ready_data)
+```
+```{r}
+
+df <- read_csv("cloudresearch_ideas.csv")
+# 1. Define the target number of subsets
+# We know we have 1280 of each item, and we want 5 per subset.
+# 1280 / 5 = 256 subsets.
+n_subsets <- 256
+
+# 2. Create the function to shuffle and assign IDs
+assign_subset_ids <- function(data, n_groups) {
+  data %>%
+    sample_n(n()) %>%                               # Shuffle rows to randomize Condition
+    mutate(subset_id = rep(1:n_groups, each = 5))   # Assign IDs 1-256, 5 times each
+}
+
+# 3. Apply this to each object type separately to guarantee the 5-5-5 split
+final_df <- df %>%
+  group_by(prompt_object) %>%
+  group_split() %>%
+  map_dfr(~ assign_subset_ids(.x, n_subsets)) %>%
+  arrange(subset_id) # Sort so you can see the groups of 15 together
+
+# 4. Check your work (Sanity Check)
+# This table should show '5' for every cell
+print(table(final_df$subset_id, final_df$prompt_object))
+
+# 5. Save the new file
+write_csv(final_df, "ideas_with_subsets.csv")
+```
+
+
+```{r}
+write_csv(qualtrics_ready_data, "data/cloudresearch_ideas.csv")
+```
+
+
+```{r}
+# Write cleaned data to csv
+
+write_csv(trials, "data/cloudresearch_2025.12.08.csv")
+```
+
+## Homogeneity Analysis
+```{r}
+homogeneity <- read_csv("data/cloudresearch_homogeneity.csv")
+
+demographics <- trials %>% 
+  distinct(submitter_id, White, gender, age)
+
+homogeneity_covariates <- left_join(homogeneity, demographics, by="submitter_id")
+
+homogeneity_model <- lmer(similarity ~ condition + scale(age) + as.factor(gender) + as.factor(White)+ (1|submitter_id) + (1|object), data=homogeneity_covariates)
+
+summary(homogeneity_model)
+anova(homogeneity_model)
+```
+
+## Self-perceived creativity
+
+```{r}
+self_creativity_model <- lmer(creative ~ Condition + (1|submitter_id), data=trials)
+summary(self_creativity_model)
+
+self_originality_model <- lmer(original ~ Condition + (1|submitter_id), data=trials)
+summary(self_originality_model)
+
+self_usefulness_model <- lmer(useful ~ Condition + (1|submitter_id), data=trials)
+summary(self_usefulness_model)
+```
+
+## Chat Data Analysis
+```{r}
+chat_data <- cleaned_names %>% 
+  select(submitter_id, Condition, ends_with("chatMessageCount"), ends_with("totalPasteEvents")) %>% 
+  rowwise() %>% 
+  mutate(mean_turns = mean(c_across(q1_chatMessageCount:q3_chatMessageCount), na.rm=TRUE)) %>% 
+  mutate(copy_paste = mean(c_across(q1_totalPasteEvents:q3_totalPasteEvents))) %>% 
+  group_by(Condition) %>% 
+  get_summary_stats(c(mean_turns, copy_paste), type="mean_se") %>% 
+  ggplot(aes(x=Condition, y=mean)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se)) +
+  facet_wrap(~variable)
+
+chat_data
+
+
+```
+
+
+```{r}
+chat_log <- cleaned_names %>% 
+  select(submitter_id, Condition, q1_chatMessageCount:q3_totalPasteEvents)
+write_csv(cleaned_names, "data/cloudresearch_chatlog.csv")
+```
+
+```{r}
+# 1. Load the data
+df <- read_csv("data/cloudresearch_chatlog.csv")
+
+# 2. Reshape and Parse
+parsed_df <- df %>%
+  # Select the necessary columns
+  select(submitter_id, Condition, ends_with("chatConversationLog"), ends_with("chatSessionDurationMs")) %>%
+  
+  # Pivot to a "long" format so all chat logs are in one column
+  pivot_longer(
+    cols = ends_with("chatConversationLog"),
+    names_to = "source_column",
+    values_to = "json_content"
+  ) %>%
+  
+  # Remove empty rows
+  filter(!is.na(json_content)) %>%
+  
+  # Parse the JSON string for each row
+  mutate(parsed_data = map(json_content, function(x) {
+    jsonlite::fromJSON(x) %>%
+    as_tibble() %>%
+  mutate(
+    # Convert ISO 8601 string to POSIXct datetime object
+    timestamp = ymd_hms(timestamp),
+    
+    # Optional: Convert types to factors for easier grouping later
+    type = factor(type, levels = c("session_start", "user_message", "ai_response"))
+  ) %>%
+  # Good practice to ensure chronological order
+  arrange(timestamp)
+  })) %>%
+  
+  # Expand the list column into actual dataframe rows
+  unnest(parsed_data) %>%
+  
+  # Remove the original raw JSON string column
+  select(-json_content) %>% 
+  filter(type != "session_start")
+
+# 3. View and Save
+print(head(parsed_df))
+
+
+parsed_chats <- parsed_df %>% 
+  mutate(length = str_count(content, "\\w+"))
+
+parsed_chats %>% 
+  filter(type=="user_message") %>% 
+  group_by(Condition) %>% 
+  get_summary_stats(length, type="mean_se") %>% 
+  ggplot(aes(x=Condition, y=mean)) +
+  geom_point(size=3) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se)) +
+  labs(y="Mean number of words in user message") +
+  ylim(c(5, 15)) +
+  jtools::theme_apa()
+
+write_csv(parsed_df, "parsed_chats.csv")
+```
+
+

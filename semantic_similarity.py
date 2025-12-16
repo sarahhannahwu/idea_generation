@@ -12,12 +12,12 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # Load the data
 
-data_path = '~/Git_Projects/idea_generation/data/idea_submissions.csv'  # Update with your actual data path
+data_path = '~/Git_Projects/idea_generation/data/evaluated_compliant_ideas.csv'  # Update with your actual data path
 df = pd.read_csv(data_path)
 
-# For each combination of experimental condition, object, and ResponseId, compute the semantic similarity of ideas
+# For each combination of experimental condition, object, and submitter_id, compute the semantic similarity of ideas
 results = []
-for (condition, obj, response_id), group in df.groupby(['condition', 'object', 'ResponseId']):
+for (condition, obj, submitter_id), group in df.groupby(['condition', 'object', 'submitter_id']):
     ideas = group['use'].tolist()
 
     # Compute embeddings
@@ -36,7 +36,7 @@ for (condition, obj, response_id), group in df.groupby(['condition', 'object', '
         results.append({
             'condition': condition,
             'object': obj,
-            'ResponseId': response_id,
+            'submitter_id': submitter_id,
             'similarity': sim
         })
 
@@ -44,7 +44,7 @@ for (condition, obj, response_id), group in df.groupby(['condition', 'object', '
 results_df = pd.DataFrame(results)
 
 # Save results to CSV
-output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/semantic_similarities.csv')  # Update with your desired output path
+output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/compliant_semantic_similarities.csv')  # Update with your desired output path
 results_df.to_csv(output_path, index=False)
 
 # Compute mean and standard deviation of similarities for each condition
@@ -54,7 +54,7 @@ summary = results_df.groupby('condition')['similarity'].agg(['mean', 'std'])
 print(summary)
 
 # Save summary statistics to CSV
-summary_output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/semantic_similarity_summary.csv')  # Update with your desired output path
+summary_output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/compliant_semantic_similarity_summary.csv')  # Update with your desired output path
 summary.to_csv(summary_output_path)
 
 # Run a simple ANOVA to see if there are significant differences between conditions

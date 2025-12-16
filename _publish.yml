@@ -2,3 +2,9 @@
   quarto-pub:
     - id: 2a78d324-8f33-4bda-968f-79d611d020ae
       url: https://sarahwu.quarto.pub/creativity_pilot
+- source: iriss.qmd
+  quarto-pub:
+    - id: 2b2e1183-33d5-4745-bbfd-ca1742c7ce8e
+      url: https://sarahwu.quarto.pub/creativity-with-ai-(iriss-sample
+    - id: fbbd4047-3418-4be8-be3e-16fca68310bc
+      url: https://sarahwu.quarto.pub/httpsusernamequartopubcreativity-with-ai
