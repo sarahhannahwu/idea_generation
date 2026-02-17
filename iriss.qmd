@@ -65,7 +65,9 @@ library(gt)
 library(multcomp)
 library(ggdist)
 library(viridis)
-
+library(stargazer)
+library(factoextra)
+library(cluster)
 
 ```
 
@@ -272,7 +274,7 @@ iriss_self_perceptions %>%
   summarize(originality = mean(originality)) %>% 
   ggplot(aes(x=condition, y=originality)) +
   geom_boxplot() +
-  stat_summary(fun="mean") 
+  stat_summary(fun="mean") +
   labs(y="Self-perceived originality")
 ```
 
@@ -814,6 +816,7 @@ iriss_semantic_similarities <- read_csv("data/iriss_semantic_similarities.csv") 
 # sjPlot::tab_model(iriss_semantic_similarity_mod)
 
 
+
 ```
 
 According to the linear mixed model, participants in the low-agency condition produce significantly more similar ideas than the Control group. \### Noncompliance in AI Access conditions
@@ -950,6 +953,11 @@ compliant_ideas %>%
   print(n=80)
 ```
 
+## Cluster analysis
+```{r}
+embeddings <- read_csv("data/evaluated_compliant_ideas_with_embeddings.csv")
+```
+
 ```{python}
 # from sentence_transformers import SentenceTransformer
 # import pandas as pd
@@ -1000,11 +1008,6 @@ compliant_ideas %>%
 
 Exclude the trials where participants in the treatment groups did not use AI.
 
-```{r}
-
-compliant_similarities <- read_csv("data/compliant_semantic_similarities.csv")
-
-```
 
 ### Age and gender covariates
 
@@ -1019,6 +1022,97 @@ demographics_recoded <- submitter_demographics %>%
 
 
 
+```
+
+
+```{r}
+# One operationalization
+compliant_similarities <- read_csv("data/compliant_semantic_similarities.csv")
+
+# Doshi operationalization
+iriss_doshi <- read_csv("data/doshi_centroid_analysis.csv") %>% 
+  left_join(demographics_recoded,
+            by="submitter_id")
+  # mutate(race_recoded = 
+  #          if_else(race == "3", "White", "Non-White")) %>% 
+  # mutate(gender_recoded =
+  #          if_else(gender == "2", "Female", "Non-Female"))
+
+iriss_doshi_mod <- lmer(similarity_to_cond_obj ~ 
+                          condition + 
+                          scale(age) +
+                          as.factor(race) +
+                          as.factor(gender) +
+                          (1|object) + 
+                          (1|submitter_id), 
+                        data=iriss_doshi)
+summary(iriss_doshi_mod)
+anova(iriss_doshi_mod, type = 3)
+
+iriss_doshi %>% 
+  group_by(condition) %>% 
+  get_summary_stats(sim_cond_ideas, 
+                    type="mean_sd") %>% 
+  arrange(desc(mean))
+
+cond_means <- emmeans(iriss_doshi_mod, "condition")
+posthoc_results <- pairs(cond_means, adjust="tukey")
+print(posthoc_results)
+
+```
+
+
+## Doshi Operationalization
+```{r}
+doshi_plot <- iriss_doshi %>% 
+  mutate(condition = fct_relevel(condition,
+                                 "Low-Agency",
+                                 "High-Agency",
+                                 "Control")) %>% 
+  ggplot(aes(x = condition, y = similarity_to_cond_obj, fill = condition)) +
+  # Add the 'Cloud' (Density half-violin)
+  stat_halfeye(
+    adjust = .5, 
+    width = .6, 
+    .width = 0, 
+    justification = -.3, 
+    point_colour = NA
+  ) +
+  # Add the 'Rain' (Raw data points)
+  # geom_dots(
+  #   side = "left", 
+  #   dotsize = .4, 
+  #   justification = 1.1, 
+  #   binwidth = .005,
+  #   alpha = 0.5
+  # ) +
+  # Add a small Boxplot to show the median and quartiles
+  geom_boxplot(
+    width = .15, 
+    outlier.shape = NA, # Outliers are already visible in the 'rain'
+    alpha = 0.5
+  ) +
+  stat_summary(fun="mean") +
+  # Aesthetics and Labels
+  scale_fill_manual(values = c(
+    "Control" = "#2c3e50",
+    "Low-Agency" = "#e31a1c",
+    "High-Agency" = "#18bc9c"
+  )) +
+  scale_y_continuous(
+    breaks = seq(0, 1, by = 0.1)
+  ) +
+  coord_cartesian(clip="on") +
+  theme_apa() +
+  labs(
+    x = "Condition",
+    y = "Homogeneity (Similarity to Condition-Object Centroid)",
+    fill = "Condition"
+  ) +
+  coord_flip() + # Flipping makes it easier to read the condition names
+  theme(legend.position = "none")
+doshi_plot
+ggsave("figures/doshi_homogeneity.png", doshi_plot)
 ```
 
 ### Top-performing ideas by condition
@@ -1133,41 +1227,68 @@ compliant_trials_demographics %>%
   get_summary_stats(usefulness, type="mean_sd")
 
 compliant_originality_mod <- lmer(
-  originality ~ condition + scale(age) + as.factor(gender) + as.factor(race) + (1|object) + (1|submitter_id), data=compliant_trials_demographics)
+  originality ~ 
+    scale(age) + 
+    as.factor(gender) + 
+    as.factor(race) + 
+    condition +
+    (1|object) + 
+    (1|submitter_id), data=compliant_trials_demographics)
 summary(compliant_originality_mod)
 
 compliant_creativity_mod <- lmer(
-  creativity ~ condition + scale(age) + as.factor(gender) + as.factor(race) + (1|object) + (1|submitter_id), data=compliant_trials_demographics)
+  creativity ~ 
+    scale(age) + 
+    as.factor(gender) + 
+    as.factor(race) + 
+    condition +
+    (1|object) + 
+    (1|submitter_id), data=compliant_trials_demographics)
 summary(compliant_creativity_mod)
 
 compliant_usefulness_mod <- lmer(
-  usefulness ~ condition + scale(age) + as.factor(gender) + as.factor(race) + (1|object) + (1|submitter_id), data= compliant_trials_demographics
+  usefulness ~ 
+    scale(age) + 
+    as.factor(gender) + 
+    as.factor(race) + 
+    condition +
+    (1|object) + 
+    (1|submitter_id), data= compliant_trials_demographics
 )
 summary(compliant_usefulness_mod)
 anova(compliant_usefulness_mod, type=3)
 effectsize::eta_squared(compliant_usefulness_mod)
 emmeans(compliant_usefulness_mod, pairwise ~ condition)
 
-
-sjPlot::tab_model(compliant_creativity_mod, compliant_originality_mod, compliant_usefulness_mod,
-                  pred.labels = c("Intercept",
-                                  "High-Agency Condition",
-                                  "Low-Agency Condition",
-                                  "Age",
-                                  "Gender (Female)",
-                                  "Race (White)"),
-                  string.ci = "95% CI",
-                  dv.labels = c("Creativity", "Originality", "Usefulness"))
+# 
+# sjPlot::tab_model(compliant_creativity_mod, compliant_originality_mod, compliant_usefulness_mod,
+#                   pred.labels = c("Intercept",
+#                                   "High-Agency Condition",
+#                                   "Low-Agency Condition",
+#                                   "Age",
+#                                   "Gender (Female)",
+#                                   "Race (White)"),
+#                   string.ci = "95% CI",
+#                   dv.labels = c("Creativity", "Originality", "Usefulness"))
 
 summary(compliant_originality_mod)   
 anova(compliant_originality_mod)
 
+class(compliant_creativity_mod) <- "lmerMod"
+class(compliant_originality_mod) <- "lmerMod"
+class(compliant_usefulness_mod) <- "lmerMod"
+stargazer(compliant_creativity_mod, compliant_originality_mod, compliant_usefulness_mod, type = "latex", out = "tables/individual_metrics.tex")
 ```
 
 ```{r}
 homogeneity_demographics <- left_join(compliant_similarities, demographics_recoded, by="submitter_id")
+
+nomic_similarities <- read_csv("data/nomic_similarities.csv")
+
+nomic_demographics <- left_join(nomic_similarities, demographics_recoded, by="submitter_id")
 ```
 
+# H2 with Compliant Ideas
 ```{r}
 compliant_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|submitter_id), data=homogeneity_demographics)
 anova(compliant_semantic_similarity_mod)
@@ -1175,20 +1296,66 @@ effectsize::eta_squared(compliant_semantic_similarity_mod)
 
 
 compliant_similarity_demographics_mod <- lmer(
-  similarity ~ condition + scale(age) + as.factor(gender) + as.factor(race) + (1|object) + (1|submitter_id), data=homogeneity_demographics)
+  similarity ~ 
+    scale(age) + 
+    as.factor(gender) + 
+    as.factor(race) +
+    condition + 
+    (1|object) + 
+    (1|submitter_id), 
+  data=homogeneity_demographics)
 summary(compliant_similarity_demographics_mod)
 
-sjPlot::tab_model(compliant_similarity_demographics_mod,
-                  pred.labels = c("Intercept",
-                                  "High-Agency Condition",
-                                  "Low-Agency Condition",
-                                  "Age",
-                                  "Gender (Female)",
-                                  "Race (White)"),
-                  string.ci = "95% CI",
-                  dv.labels = "Homogeneity")
+nomic_mod <- lmer(
+  similarity ~
+    scale(age) + 
+    as.factor(gender) + 
+    as.factor(race) +
+    condition + 
+    (1|submitter_id), 
+  data=nomic_demographics
+)
+summary(nomic_mod)
+
+
+# sjPlot::tab_model(compliant_similarity_demographics_mod,
+#                   pred.labels = c("Intercept",
+#                                   "High-Agency Condition",
+#                                   "Low-Agency Condition",
+#                                   "Age",
+#                                   "Gender (Female)",
+#                                   "Race (White)"),
+#                   string.ci = "95% CI",
+#                   dv.labels = "Homogeneity")
+class(compliant_similarity_demographics_mod) <- "lmerMod"
+class(iriss_doshi_mod) <- "lmerMod"
+stargazer(compliant_similarity_demographics_mod, iriss_doshi_mod, type="latex", out = "tables/homogeneity.tex")
+```
+
+```{r}
+centroid <- read_csv("data/centroids.csv")
+
+centroid_demographics <- centroid %>% 
+ left_join(demographics_recoded, by="submitter_id")
+
+ggplot(centroid, aes(x = condition,
+                     y = semantic_distance)) +
+  geom_boxplot() +
+  stat_summary(fun="mean") 
+
+centroid_mod <- lmer(
+  semantic_distance ~
+    scale(age) + 
+    as.factor(gender) + 
+    as.factor(race) +
+    condition + 
+    (1|submitter_id), 
+  data=centroid_demographics
+)
+summary(centroid_mod)
 
 ```
+
 
 ```{r}
 similarity_stats <- aov(similarity ~ condition, data=compliant_similarities)
@@ -1218,7 +1385,9 @@ plots <- map(outcomes, function(var) {
     summarize(value = mean(.data[[var]]), .groups = "drop")
   
   ggplot(summary_df, aes(x = value, y = condition, fill = condition)) +
-    geom_density_ridges(alpha = 0.6, quantile_lines = TRUE, quantile_fun = mean) +
+    geom_density_ridges(alpha = 0.6, 
+                        quantile_lines = TRUE, 
+                        quantile_fun = mean) +
     xlim(c(1,5)) +
     labs(x = str_to_title(var), y = "") +
     theme_apa() +
@@ -1239,7 +1408,58 @@ ggsave("figures/usefulness.png", plot = plots[[3]])
 compliant_evaluation_plot <- creativity + originality + usefulness + plot_annotation(tag_levels = "a")
 compliant_evaluation_plot
 
-ggsave(plot=compliant_evaluation_plot, filename="figures/compliant_evaluations.png")
+ggsave(plot=compliant_evaluation_plot, filename="figures/compliant_evaluations.png",
+  width = 10,  # Wide
+  height = 4)
+```
+```{r}
+
+outcomes <- c("originality", "creativity", "usefulness")
+
+plots <- map(outcomes, function(var) {
+  # Aggregate to the participant level first as in your original code
+  summary_df <- compliant_trials_demographics %>%
+    mutate(condition = fct_relevel(condition, c("Low-Agency", "High-Agency", "Control"))) %>% 
+    group_by(submitter_id, condition) %>%
+    summarize(value = mean(.data[[var]], na.rm = TRUE), .groups = "drop")
+  
+  ggplot(summary_df, aes(x = condition, 
+                         y = value, 
+                         color = condition)) +
+    # stat_summary handles the bootstrapping automatically
+    geom_point(position = 
+                 position_jitter(width = 0.2, height = 0),
+               alpha = .4) +
+    stat_summary(aes(fill=condition),
+                 fun.data = mean_cl_boot,
+                 geom = "pointrange",
+                 shape = 21,
+                 color = "black") +
+    scale_x_discrete(labels = c("Low-Agency" = "Low-\nAgency", 
+                                "High-Agency" = "High-\nAgency", 
+                                "Control" = "Control")) +
+    scale_y_continuous(limits = c(1, 5)) +
+    labs(y = str_to_title(var), x = "") +
+    theme_apa() +
+    theme(legend.position = "none")
+})
+
+# Access individual plots
+originality <- plots[[1]]
+creativity <- plots[[2]]
+usefulness <- plots[[3]]
+
+# Combine plots
+compliant_evaluation_plot <- creativity + originality + usefulness + 
+  plot_annotation(tag_levels = "a")
+
+# Display and Save
+print(compliant_evaluation_plot)
+
+ggsave("figures/compliant_evaluations.png",
+       plot = compliant_evaluation_plot,
+       width = 10,
+       height = 4)
 ```
 
 ## Compliant Similarity Plot
@@ -1277,54 +1497,74 @@ ggsave("figures/compliant_semantic_similarity.png", plot=compliant_semantic_simi
 ```
 
 ```{r}
-compliant_raincloud_plot <- compliant_similarities %>% 
-  mutate(condition = fct_relevel(condition,
-                                 c("Low-Agency", "High-Agency", "Control"))) %>% 
-  ggplot(aes(y = condition, x = similarity, fill = condition)) +
+compliant_raincloud_plot <- compliant_similarities %>%
+  mutate(condition=fct_relevel(condition,
+                               "Low-Agency",
+                               "High-Agency",
+                               "Control")) %>% 
+  ggplot(aes(y = condition, 
+             x = similarity, 
+             fill = condition)) +
   
-  # Half-violin (raincloud)
+  # 1. The Cloud (Density)
+  # justification = 0 and position_nudge(y = 0.2) keeps it strictly ABOVE the center line
   stat_halfeye(
-    adjust = 0.7,
-    width = 0.6,
-    .width = 0,
-    justification = -0.15,
+    adjust = .5, 
+    width = .3,      # Limits how 'tall' the density can get
+    .width = 0, 
+    justification = 0, 
     point_colour = NA,
-    alpha = 0.7
+    position = position_nudge(y = 0.15),
+    alpha = .8
   ) +
-  
-  # Raw data jittered points
   geom_point(
-    aes(y = as.numeric(condition) + 0.1),
-    position = position_jitter(height = 0.05, width = 0),
-    size = 1,
-    alpha = 0.3
+    aes(color=condition),
+    alpha = .6,
+    position = position_jitter(width = .005),
+    size=1
   ) +
   
-  # Boxplot (thin)
+  # 3. The Boxplot (The "Horizon")
+  # width = 0.1 keeps it very thin right on the condition's axis line
   geom_boxplot(
-    width = 0.15,
+    width = 0.1,
     outlier.shape = NA,
     alpha = 0.3
   ) +
   
-  # Mean labels
-  geom_text(
-    data = similarity_means_df,
-    aes(x = mean_similarity, y = condition, 
-        label = round(mean_similarity, 2)),
-    nudge_y = 0.35,
-    size = 3.5,
-    color = "black"
-  ) +
+  # 4. Remove Whitespace & Bleeding
+  # expand = c(0, 0) removes the default 5% padding around the categories
+  scale_y_discrete(expand = c(0, 0.5)) + 
   
   scale_x_continuous(breaks = seq(-.5, 1, by = .1)) +
+  scale_color_manual(values = c(
+    "Control" = "#2c3e50",
+    "Low-Agency" = "#e31a1c",
+    "High-Agency" = "#18bc9c"
+  )) +
+  scale_fill_manual(values = c(
+    "Control" = "#2c3e50",
+    "Low-Agency" = "#e31a1c",
+    "High-Agency" = "#18bc9c"
+  )) +
   
-  labs(x = "Homogeneity",
-       y = "") +
+  # Crop the plot area to remove the empty space at the very bottom
+  coord_cartesian(clip = "on") + 
+  
+  labs(x = "Homogeneity (Similarity to One's Own Ideas)", y = "") +
   theme_apa() +
-  theme(legend.position = "none")
+  theme(
+    legend.position = "none",
+    # This adjusts the physical spacing between the condition rows
+    panel.spacing = unit(0, "lines") 
+  )
 
 compliant_raincloud_plot
+```
+
+
+```{r}
+ggsave("figures/raincloud.png", compliant_raincloud_plot)
 ```
 
 Around 24% of the low-agency conversations did not use AI and around 38% of the high-agency conversations did not use AI. Excluding the noncompliant trials did not change the results.
@@ -1700,6 +1940,91 @@ model_extended <- extend(model_sub, along="submitter_id", n=200)
 # Check power for Low vs Control
 power_result <- powerSim(model_extended) 
 power_result
+
+```
+
+# Stanford Sample
+
+```{r}
+stanford_sample <- read_csv("data/stanford_sample.csv") %>% 
+  filter(Finished=="1") %>% 
+  rename("condition" = FL_3_DO) %>% 
+  drop_na(condition)
+
+lost_data <- stanford_sample %>% 
+  filter(str_detect(q1_chatConversationLog, pattern="OpenAI billing"))
+
+stanford_wrangled <- stanford_sample %>% 
+  relocate(condition, .after = attn_check_4_TEXT) %>% 
+  anti_join(lost_data, by="ResponseId") %>% 
+  mutate(condition = case_when(condition == "GuidedInstructions" ~ "high-agency",
+                               condition == "UnguidedInstructions" ~ "low-agency",
+                               condition == "ControlInstructions" ~ "Control")) %>% 
+  filter(Progress=="100") %>% 
+  rename(submitter_id = "ResponseId") %>% 
+  mutate(age = as.numeric(age))
+```
+```{r}
+stanford_demographics <- stanford_wrangled %>%
+  mutate(gender = case_when(gender == "1" ~ "Male",
+                            gender == "2" ~ "Female",
+                            gender == "3" ~ "Non-binary",
+                            gender == "4" ~ "Prefer to self-describe")) %>% 
+  mutate(race = case_when(race == "1" ~ "Black or African-American",
+                          race == "2" ~ "American Indian or Alaskan Native",
+                          race == "3" ~ "White or Caucasian",
+                          race == "4" ~ "Native Hawaiian",
+                          race == "5" ~ "Hispanic, Latino or Spanish Origin",
+                          race == "6" ~ "Asian-American",
+                          race == "7" ~ "Multiracial or self-described")) %>% 
+  mutate(race = fct_infreq(race)) %>% 
+  dplyr::select(submitter_id, age, gender, race) 
+
+stanford_demographics %>% 
+  tbl_summary(include = c(age, gender, race),
+              statistic = list(
+                all_continuous() ~ "{mean} ({sd})",
+                all_categorical() ~ "{n} / {N} ({p}%)"),
+              digits = all_continuous() ~ 1,
+              label = list(age = "Age",
+                           gender = "Gender",
+                           race = "Race")) %>% 
+   modify_header(label ~ "**Demographic**")
+```
+```{r}
+stanford_trial_data <- stanford_wrangled %>% 
+  pivot_longer(names_to = "trial",
+                values_to = "use",
+                cols = starts_with(c("pilot", "pass", "control"))) %>% 
+  mutate(trial = str_remove(trial, "open_")) %>% # fixed naming problem
+  filter(grepl("^(pilot|pass|control)_(brick|frisbee|bubble)_[1-5]$", trial)) %>% 
+  filter(!is.na(use)) %>% # Keep only the trials with responses
+  relocate(trial, .after = "condition") %>% 
+  relocate(use, .after = "trial") %>% 
+  mutate(object = str_extract(trial, "(?<=_).*")) %>% 
+  mutate(object = str_remove(object, "_.*")) %>% 
+  relocate(object, .after = "trial") %>% 
+  mutate(object = if_else(object == "bubble", "bubblewrap", object))
+
+write_csv(stanford_trial_data, "data/stanford_trial_data.csv")
+```
+
+# Bind rows with IRiSS
+```{r}
+merged_samples <- bind_rows(evaluated_compliant_ideas, stanford_trial_data) %>% 
+  mutate(condition = str_to_lower(condition))
+
+write_csv(merged_samples, "data/merged_samples.csv")
+
+# merged_samples_compliant <- merged_samples %>% 
+#   filter(q1_chatConversationLog != "NO_CHAT_DATA") 
+
+merged_doshi <- read_csv("data/merged_sample_doshi.csv") 
+
+merged_doshi %>% 
+  group_by(condition) %>% 
+  get_summary_stats(sim_condition, type="mean_sd")
+
 
 ```
 

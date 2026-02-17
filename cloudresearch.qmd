@@ -243,6 +243,7 @@ write_csv(trials, "data/cloudresearch_2025.12.08.csv")
 ideas_for_homogeneity <- trials %>% 
   distinct(submitter_id, Condition, object, use)
 write_csv(ideas_for_homogeneity, "data/ideas_for_homogeneity_analysis.csv")
+
 ```
 
 # External Raters 
@@ -549,6 +550,8 @@ master_long <- master_df %>%
         c(subset_id, trial_id))
 
 all_ratings_demographics <- left_join(all_ratings_wide, master_long, by="trial_id")
+
+write_csv(master_df, "data/master_df.csv")
 ```
 
 ```{r}
@@ -574,6 +577,19 @@ homogeneity_model <- lmer(similarity ~ condition + scale(age) + as.factor(gender
 
 summary(homogeneity_model)
 anova(homogeneity_model)
+```
+
+
+###Doshi & Hauser analysis
+```{r}
+leave_one_out <- read_csv("data/doshi_analysis.csv")
+
+leave_one_out_covariates <- left_join(leave_one_out, demographics, by="submitter_id")
+
+leave_one_out_model <- lmer(sim_condition ~ Condition + (1|submitter_id) + (1|object), data=leave_one_out_covariates)
+
+summary(leave_one_out_model)
+anova(leave_one_out_model)
 ```
 
 ### Homogeneity Plot

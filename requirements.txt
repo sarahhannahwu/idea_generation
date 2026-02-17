@@ -1,0 +1,8 @@
+pandas
+openai
+scipy
+numpy
+fastapi
+uvicorn
+sentence-transformers
+requests

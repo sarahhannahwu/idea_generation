@@ -8,7 +8,7 @@ import scipy.stats as stats
 
 
 # Load the sentence transformer model
-model = SentenceTransformer('all-MiniLM-L6-v2')
+model = SentenceTransformer('nomic-ai/nomic-embed-text-v1', trust_remote_code=True)
 
 # Load the data
 
@@ -44,7 +44,7 @@ for (condition, obj, submitter_id), group in df.groupby(['condition', 'object', 
 results_df = pd.DataFrame(results)
 
 # Save results to CSV
-output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/compliant_semantic_similarities.csv')  # Update with your desired output path
+output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/nomic_similarities.csv')  # Update with your desired output path
 results_df.to_csv(output_path, index=False)
 
 # Compute mean and standard deviation of similarities for each condition
@@ -53,12 +53,3 @@ summary = results_df.groupby('condition')['similarity'].agg(['mean', 'std'])
 # Display summary statistics
 print(summary)
 
-# Save summary statistics to CSV
-summary_output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/compliant_semantic_similarity_summary.csv')  # Update with your desired output path
-summary.to_csv(summary_output_path)
-
-# Run a simple ANOVA to see if there are significant differences between conditions
-anova_results = stats.f_oneway(*(group['similarity'].values for name, group in results_df.groupby('condition')))
-print("ANOVA results:")
-print(f"F-statistic: {anova_results.statistic}")
-print(f"P-value: {anova_results.pvalue}")
