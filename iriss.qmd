@@ -940,6 +940,41 @@ compliant_ideas %>%
 ```
 
 ```{r}
+# Get a count of how many ideas in each condition mentioned "art" or "diy"
+compliant_ideas %>% 
+  mutate(use = str_to_lower(use)) %>% 
+  group_by(condition) %>% 
+  summarise(n_matches = sum(str_detect(use, "\\bart\\b|diy")))
+```
+
+```{r}
+# Filter to the participants whose submitter_id is in the compliant conversations dataset, then get descriptives on how long they spent on the task
+iriss_trial_data %>% 
+  semi_join(compliant_conversations, by="submitter_id") %>% 
+  distinct(submitter_id, condition, `Duration (in seconds)`) %>%
+  rename(duration = `Duration (in seconds)`) %>%
+  mutate(duration = as.numeric(duration)) %>%
+  # Exclude outliers who spent more than 2 hours on the task
+  filter(duration < 7200) %>%
+  group_by(condition) %>% 
+  get_summary_stats(duration, type="mean_se") %>%
+  ggplot(aes(x=condition, y=mean, color=condition)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean - se, ymax = mean + se), width = 0.2) +
+  scale_color_manual(values = c("Control" = "#619bff", "high-agency" = "#00BA38", "low-agency" = "#F8766D")) +
+  ylim(c(0, 2000)) +
+  labs(x = "Condition", 
+       y = "Mean Completion Time (seconds)",
+       title = "IRiSS") +
+  jtools::theme_apa() +
+  theme(legend.position = "none")
+  
+  
+  
+  
+```
+
+```{r}
 compliant_ideas %>% 
   mutate(use = str_to_lower(use)) %>% 
   group_by(condition) %>% 
@@ -953,55 +988,11 @@ compliant_ideas %>%
   print(n=80)
 ```
 
-## Cluster analysis
+## Embeddings
 ```{r}
+# Pre-processed text
 embeddings <- read_csv("data/evaluated_compliant_ideas_with_embeddings.csv")
-```
-
-```{python}
-# from sentence_transformers import SentenceTransformer
-# import pandas as pd
-# import numpy as np
-# import os
-# os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# 
-# 
-# # Load the sentence transformer model
-# model = SentenceTransformer('all-MiniLM-L6-v2')
-# 
-# # Load the data
-# 
-# data_path = '~/Git_Projects/idea_generation/data/evaluated_compliant_ideas.csv'  # Update with your actual data path
-# df = pd.read_csv(data_path)
-# 
-# # For each combination of experimental condition, object, and submitter_id, compute the semantic similarity of ideas
-# results = []
-# for (condition, obj, submitter_id), group in df.groupby(['condition', 'object', 'submitter_id']):
-#     ideas = group['use'].tolist()
-# 
-#     # Compute embeddings
-#     embeddings = model.encode(ideas)
-# 
-#     # Compute cosine similarity matrix
-#     norm_embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-#     similarity_matrix = np.dot(norm_embeddings, norm_embeddings.T)
-# 
-#     # Extract upper triangle of the similarity matrix, excluding the diagonal
-#     upper_tri_indices = np.triu_indices_from(similarity_matrix, k=1)
-#     similarities = similarity_matrix[upper_tri_indices]
-# 
-#     # Store results
-#     for sim in similarities:
-#         results.append({
-#             'condition': condition,
-#             'object': obj,
-#             'submitter_id': submitter_id,
-#             'similarity': sim
-#         })
-# 
-# # Convert results to DataFrame
-# compliant_similarity_df = pd.DataFrame(results)
-# summary_output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/compliant_semantic_similarity_summary.csv')
+pairwise <- read_csv("data/pairwise_similarities.csv") 
 ```
 
 ## H1 and 2: Compliant analyses
@@ -1018,8 +1009,22 @@ demographics_recoded <- submitter_demographics %>%
          race=if_else(race=="White or Caucasian",1,0))
 
 # 
-# similarity_demographics <- left_join(compliant_similarities, demographics_recoded, by="submitter_id") 
+similarity_demographics <- left_join(pairwise, demographics_recoded, by="submitter_id")
 
+pairwise_lmer <- lmer(similarity ~ condition + 
+       scale(age) + 
+       as.factor(race) + 
+       as.factor(gender) + 
+       (1|object) + 
+       (1|submitter_id), 
+     data=similarity_demographics)
+
+summary(pairwise_lmer)
+anova(pairwise_lmer)
+# Conduct posthoc contrasts using joint_tests to get adjusted p-values
+similarity_emmeans <- emmeans(pairwise_lmer, "condition")
+similarity_posthoc <- pairs(similarity_emmeans, adjust="tukey")
+print(similarity_posthoc)
 
 
 ```
@@ -1771,7 +1776,8 @@ duration <- iriss %>%
   relocate(duration_min, .after=duration_sec)
 
 duration %>% 
-  get_summary_stats(duration_min, type = "five_number")
+  group_by(condition) %>%
+  get_summary_stats(duration_min, type = "mean_se")
 
 
 # Timing variables refer to the amount of time it took the participant to read their condition's instructions
@@ -1943,160 +1949,3 @@ power_result
 
 ```
 
-# Stanford Sample
-
-```{r}
-stanford_sample <- read_csv("data/stanford_sample.csv") %>% 
-  filter(Finished=="1") %>% 
-  rename("condition" = FL_3_DO) %>% 
-  drop_na(condition)
-
-lost_data <- stanford_sample %>% 
-  filter(str_detect(q1_chatConversationLog, pattern="OpenAI billing"))
-
-stanford_wrangled <- stanford_sample %>% 
-  relocate(condition, .after = attn_check_4_TEXT) %>% 
-  anti_join(lost_data, by="ResponseId") %>% 
-  mutate(condition = case_when(condition == "GuidedInstructions" ~ "high-agency",
-                               condition == "UnguidedInstructions" ~ "low-agency",
-                               condition == "ControlInstructions" ~ "Control")) %>% 
-  filter(Progress=="100") %>% 
-  rename(submitter_id = "ResponseId") %>% 
-  mutate(age = as.numeric(age))
-```
-```{r}
-stanford_demographics <- stanford_wrangled %>%
-  mutate(gender = case_when(gender == "1" ~ "Male",
-                            gender == "2" ~ "Female",
-                            gender == "3" ~ "Non-binary",
-                            gender == "4" ~ "Prefer to self-describe")) %>% 
-  mutate(race = case_when(race == "1" ~ "Black or African-American",
-                          race == "2" ~ "American Indian or Alaskan Native",
-                          race == "3" ~ "White or Caucasian",
-                          race == "4" ~ "Native Hawaiian",
-                          race == "5" ~ "Hispanic, Latino or Spanish Origin",
-                          race == "6" ~ "Asian-American",
-                          race == "7" ~ "Multiracial or self-described")) %>% 
-  mutate(race = fct_infreq(race)) %>% 
-  dplyr::select(submitter_id, age, gender, race) 
-
-stanford_demographics %>% 
-  tbl_summary(include = c(age, gender, race),
-              statistic = list(
-                all_continuous() ~ "{mean} ({sd})",
-                all_categorical() ~ "{n} / {N} ({p}%)"),
-              digits = all_continuous() ~ 1,
-              label = list(age = "Age",
-                           gender = "Gender",
-                           race = "Race")) %>% 
-   modify_header(label ~ "**Demographic**")
-```
-```{r}
-stanford_trial_data <- stanford_wrangled %>% 
-  pivot_longer(names_to = "trial",
-                values_to = "use",
-                cols = starts_with(c("pilot", "pass", "control"))) %>% 
-  mutate(trial = str_remove(trial, "open_")) %>% # fixed naming problem
-  filter(grepl("^(pilot|pass|control)_(brick|frisbee|bubble)_[1-5]$", trial)) %>% 
-  filter(!is.na(use)) %>% # Keep only the trials with responses
-  relocate(trial, .after = "condition") %>% 
-  relocate(use, .after = "trial") %>% 
-  mutate(object = str_extract(trial, "(?<=_).*")) %>% 
-  mutate(object = str_remove(object, "_.*")) %>% 
-  relocate(object, .after = "trial") %>% 
-  mutate(object = if_else(object == "bubble", "bubblewrap", object))
-
-write_csv(stanford_trial_data, "data/stanford_trial_data.csv")
-```
-
-# Bind rows with IRiSS
-```{r}
-merged_samples <- bind_rows(evaluated_compliant_ideas, stanford_trial_data) %>% 
-  mutate(condition = str_to_lower(condition))
-
-write_csv(merged_samples, "data/merged_samples.csv")
-
-# merged_samples_compliant <- merged_samples %>% 
-#   filter(q1_chatConversationLog != "NO_CHAT_DATA") 
-
-merged_doshi <- read_csv("data/merged_sample_doshi.csv") 
-
-merged_doshi %>% 
-  group_by(condition) %>% 
-  get_summary_stats(sim_condition, type="mean_sd")
-
-
-```
-
-```{r}
-
-# 
-# # ---------------------------------------------------------
-# # 1. Ensure condition has ALL FOUR LEVELS
-# # ---------------------------------------------------------
-# compliant_similarities$condition <- factor(
-#   compliant_similarities$condition,
-#   levels = c("Control", "Low-Agency", "High-Agency", "No-Agency")  # <--- edit if needed
-# )
-# # ---------------------------------------------------------
-# # 2. Draw a random sample AND add sufficient dummy rows
-# # ---------------------------------------------------------
-# pilot_sub <- compliant_similarities[sample(nrow(compliant_similarities), 50), ]
-# 
-# # Create MULTIPLE dummy rows for No-Agency (need enough for model to fit)
-# # Aim for similar representation as other conditions
-# n_dummy <- round(50 / 3)  # distribute evenly across 4 conditions
-# 
-# dummy_rows <- pilot_sub[1:n_dummy, ]  # copy structure
-# dummy_rows$condition <- "No-Agency"
-# # Use mean of pilot data as placeholder
-# dummy_rows$similarity <- mean(pilot_sub$similarity, na.rm = TRUE)
-# 
-# # Add to pilot dataset
-# pilot_sub2 <- rbind(pilot_sub, dummy_rows)
-# 
-# # ---------------------------------------------------------
-# # 3. Fit mixed model on pilot data
-# # ---------------------------------------------------------
-# model_sub <- lmer(
-#   similarity ~ condition + (1 | object) + (1 | submitter_id),
-#   data = pilot_sub2
-# )
-# 
-# summary(model_sub)
-# 
-# # ---------------------------------------------------------
-# # 4. Set hypothetical effect sizes relative to Control
-# # ---------------------------------------------------------
-# fixef(model_sub)[2] <- 0.10  # Low-Agency
-# fixef(model_sub)[3] <- 0.05  # High-Agency
-# fixef(model_sub)[4] <- 0.10  # No-Agency
-# 
-# fixef(model_sub)   # check
-# 
-# # ---------------------------------------------------------
-# # 5. Extend the model to desired N (e.g., 200 participants)
-# # ---------------------------------------------------------
-# model_extended <- extend(model_sub, along = "submitter_id", n=280)
-# 
-# # ---------------------------------------------------------
-# # 6. Power for each contrast
-# # ---------------------------------------------------------
-# 
-# # ---------------------------------------------------------
-# # 6. Power for predictor "condition"
-# power <- powerSim(model_extended)
-# power
-# 
-# # ---------------------------------------------------------
-# # 7. Optional: run power curves to determine required N
-# # ---------------------------------------------------------
-# 
-# 
-# pc <- powerCurve(
-#   model_extended,
-# )
-# pc
-# plot(pc)
-
-```

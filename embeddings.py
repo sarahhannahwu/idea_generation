@@ -12,6 +12,8 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # 3. Generate Embeddings
 ideas = df['use'].fillna("").tolist()
+# Preprocess ideas (e.g., strip whitespace, convert to lowercase) to ensure consistency
+ideas = [idea.strip().lower() for idea in ideas]
 all_embeddings = model.encode(ideas, show_progress_bar=True)
 
 # Append embeddings to dataframe for k-means clustering

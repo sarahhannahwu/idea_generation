@@ -13,7 +13,8 @@ cloudresearch <- fetch_survey(surveyID = "SV_8ccaK54JnClG1Bs",
                               label = FALSE,
                               convert = FALSE) %>% 
   filter(attn_check == "4" &
-         attn_check_4_TEXT == "8")
+         attn_check_4_TEXT == "8") %>% 
+  filter(Progress == 100) 
 
 time_limit <- cloudresearch %>% 
   filter(`Duration (in seconds)`< 1800)
@@ -550,7 +551,7 @@ master_long <- master_df %>%
         c(subset_id, trial_id))
 
 all_ratings_demographics <- left_join(all_ratings_wide, master_long, by="trial_id")
-
+write_csv(all_ratings_demographics, "data/cloudresearch_ideas.csv")
 write_csv(master_df, "data/master_df.csv")
 ```
 
@@ -577,6 +578,16 @@ homogeneity_model <- lmer(similarity ~ condition + scale(age) + as.factor(gender
 
 summary(homogeneity_model)
 anova(homogeneity_model)
+
+# Contrasts, with factors in alphabetical order
+contrast = list(
+  "high_vs_low" = c(0, 1, -1, 0)
+)
+
+homogeneity_model %>% 
+  emmeans(specs = "condition",
+          contr = contrast) %>% 
+  pluck("contrasts")
 ```
 
 
@@ -727,3 +738,22 @@ parsed_chats %>%
 
 write_csv(parsed_df, "data/parsed_chats.csv")
 ```
+
+## Duration
+
+```{r}
+# Check the mean completion time across conditions
+cleaned_names %>%
+  group_by(Condition) %>% 
+  get_summary_stats(`Duration (in seconds)`, type="mean_se") %>% 
+  ggplot(aes(x=Condition, y=mean, color=Condition)) +
+  geom_point(size=3) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se)) +
+  labs(y="Mean Completion Time (seconds)",
+       title = "CloudResearch") +
+  scale_color_manual(values = c("control" = "#619bff", "high-agency" = "#00BA38", "low-agency" = "#F8766D", "unstructured" = "gold")) +
+  ylim(c(0, 2000)) +
+  jtools::theme_apa() +
+  theme(legend.position = "none")
+```
+High-Agency and Unstructured took the longest time to complete the survey. Control participants were the fastest. 

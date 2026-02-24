@@ -8,17 +8,21 @@ import scipy.stats as stats
 
 
 # Load the sentence transformer model
-model = SentenceTransformer('nomic-ai/nomic-embed-text-v1', trust_remote_code=True)
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # Load the data
 
 data_path = '~/Git_Projects/idea_generation/data/evaluated_compliant_ideas.csv'  # Update with your actual data path
 df = pd.read_csv(data_path)
 
-# For each combination of experimental condition, object, and submitter_id, compute the semantic similarity of ideas
+# Compute the pairwise cosine similarity of ideas by condition, object, and submitter_id
+
 results = []
 for (condition, obj, submitter_id), group in df.groupby(['condition', 'object', 'submitter_id']):
     ideas = group['use'].tolist()
+
+    # Preprocess ideas (e.g., strip whitespace, convert to lowercase) to ensure consistency
+    ideas = [idea.strip().lower() for idea in ideas]
 
     # Compute embeddings
     embeddings = model.encode(ideas)
@@ -36,15 +40,15 @@ for (condition, obj, submitter_id), group in df.groupby(['condition', 'object', 
         results.append({
             'condition': condition,
             'object': obj,
-            'submitter_id': submitter_id,
-            'similarity': sim
+            'similarity': sim,
+            'submitter_id': submitter_id  
         })
 
 # Convert results to DataFrame
 results_df = pd.DataFrame(results)
 
 # Save results to CSV
-output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/nomic_similarities.csv')  # Update with your desired output path
+output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/pairwise_similarities.csv')  # Update with your desired output path
 results_df.to_csv(output_path, index=False)
 
 # Compute mean and standard deviation of similarities for each condition
