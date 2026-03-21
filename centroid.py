@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import cosine
@@ -18,51 +20,32 @@ df = pd.read_csv(file_path)
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # 3. Generate Embeddings
+# Preprocess ideas (e.g., strip whitespace, convert to lowercase) to ensure consistency
 ideas = df['use'].fillna("").tolist()
+ideas = [idea.strip().lower() for idea in ideas]
 all_embeddings = model.encode(ideas, show_progress_bar=True)
 
-# 4. Pre-calculate Centroids per [Condition + Object]
-unique_conditions = df['condition'].unique()
-unique_objects = df['object'].unique()
-group_centroids = {}
-
-# Create a grouping key to find the "norm" for each condition-object pair
-for cond in unique_conditions:
-    for obj in unique_objects:
-        mask = (df['condition'] == cond) & (df['object'] == obj)
-        valid_embeddings = all_embeddings[mask]
-        
-        if len(valid_embeddings) > 0:
-            # Centroid represents the 'average response' for this specific condition and object
-            group_centroids[(cond, obj)] = np.mean(valid_embeddings, axis=0)
-
-
-# 5. Compute Semantic Distance (Relative to the Condition-Object Norm)
-distance_results = []
-
-for idx, current_embedding in enumerate(all_embeddings):
-    row = df.iloc[idx]
-    if not ideas[idx]:
-        distance_results.append(np.nan)
-        continue
-    
-    # Identify the specific centroid for this row's condition and object
-    centroid = group_centroids.get((row['condition'], row['object']))
-    
-    if centroid is not None:
-        dist = cosine(current_embedding, centroid)
-        distance_results.append(dist)
-    else:
-        distance_results.append(np.nan)
-
-df['semantic_distance'] = distance_results
-
-# 6. Save results
-df.to_csv('data/centroids_updated.csv', index=False)
+# Compute cosine distance between each idea and the centroid of all other ideas in that condition-object pair
+df['semantic_distance'] = np.nan  # Initialize a new column for semantic distance
+for (condition, obj), group in df.groupby(['condition', 'object']):
+    indices = group.index.tolist()
+    if len(indices) > 1:  # Ensure there are at least 2 ideas to compute a centroid
+        for idx in indices:
+            # Compute the centroid of all other ideas in the same condition-object pair
+            other_indices = [i for i in indices if i != idx]
+            if other_indices:  # Check if there are other ideas to compute the centroid
+                centroid = np.mean(all_embeddings[other_indices], axis=0)
+                # Compute cosine distance between the idea and the centroid
+                distance = cosine(all_embeddings[idx], centroid)
+                df.at[idx, 'semantic_distance'] = distance
 
 
 # Print summary stats to check the comparison
 print("\n--- Semantic Distance Summary Statistics per Condition ---")
-# Mean and 95% confidence interval of distances per condition-object pair
+# Descriptives of distances per condition-object pair
 summary_stats = df.groupby('condition')['semantic_distance'].agg(['mean', 'std', 'count']).reset_index()
 print(summary_stats)
+
+# Save the file as a csv
+output_path = os.path.expanduser('~/Git_Projects/psych252/final-project-sarah-wu/data/centroids.csv')
+df.to_csv(output_path, index=False)

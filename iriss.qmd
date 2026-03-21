@@ -819,7 +819,9 @@ iriss_semantic_similarities <- read_csv("data/iriss_semantic_similarities.csv") 
 
 ```
 
-According to the linear mixed model, participants in the low-agency condition produce significantly more similar ideas than the Control group. \### Noncompliance in AI Access conditions
+According to the linear mixed model, participants in the low-agency condition produce significantly more similar ideas than the Control group. 
+
+### Noncompliance in AI Access conditions
 
 This is JUST on the submission side. Here, we identify the trials on which high-agency participants and low-agency participants did not use AI, regardless of whether ideas from those conversations got evaluated.
 
@@ -1056,7 +1058,7 @@ anova(iriss_doshi_mod, type = 3)
 
 iriss_doshi %>% 
   group_by(condition) %>% 
-  get_summary_stats(sim_cond_ideas, 
+  get_summary_stats(similarity_to_cond_obj, 
                     type="mean_sd") %>% 
   arrange(desc(mean))
 
