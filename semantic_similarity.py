@@ -35,30 +35,24 @@ for (condition, obj), group in df.groupby(['condition', 'object']):
     norm_embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
     similarity_matrix = np.dot(norm_embeddings, norm_embeddings.T)
 
-    # Extract upper triangle of the similarity matrix, excluding the diagonal
-    upper_tri_indices = np.triu_indices_from(similarity_matrix, k=1)
-    similarities = similarity_matrix[upper_tri_indices]
-    # Track whether the comparisons are within the same submitter or not
-    submitters = group['submitter_id'].tolist()
-    submitter_comparisons = []
-    for i, j in zip(*upper_tri_indices):
-        if submitters[i] == submitters[j]:
-            submitter_comparisons.append('same_submitter')
-        else:
-            submitter_comparisons.append('different_submitter')
-    # Add a column to the results with the submitter_id for the idea being left out of the centroid calculation (i.e., the idea being compared to the centroid of all other ideas in that condition-object pair)
-    submitter_ids = []
-    for i, j in zip(*upper_tri_indices):
-        submitter_ids.append(submitters[i])
+   # Upper-triangle pair indices (i < j)
+    upper_i, upper_j = np.triu_indices_from(similarity_matrix, k=1)
 
-    # Store results
-    for sim in similarities:
+    # Keep only different-submitter pairs
+    submitters = group['submitter_id'].to_numpy()
+    mask = submitters[upper_i] != submitters[upper_j]
+
+    i_keep = upper_i[mask]
+    j_keep = upper_j[mask]
+
+    # Store only different-submitter similarities
+    for i, j in zip(i_keep, j_keep):
         results.append({
             'condition': condition,
             'object': obj,
-            'similarity': sim,
-            'submitter_comparison': submitter_comparisons.pop(0) if submitter_comparisons else None,
-            'submitter_id': submitter_ids.pop(0) if submitter_ids else None
+            'similarity': similarity_matrix[i, j],
+            'submitter_comparison': 'different_submitter',
+            'submitter_id': submitters[i]
         })
 
 # Convert results to DataFrame
