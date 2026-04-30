@@ -1033,15 +1033,14 @@ print(similarity_posthoc)
 
 
 ```
+## Doshi centroid lmer 
 
 ```{r}
 # One operationalization
 compliant_similarities <- read_csv("data/compliant_semantic_similarities.csv")
 
 # Doshi operationalization
-iriss_doshi <- read_csv("data/doshi_centroid_analysis.csv") %>% 
-  left_join(demographics_recoded,
-            by="submitter_id")
+iriss_doshi <- read_csv("data/doshi_centroid_analysis.csv") 
   # mutate(race_recoded = 
   #          if_else(race == "3", "White", "Non-White")) %>% 
   # mutate(gender_recoded =
@@ -1049,8 +1048,8 @@ iriss_doshi <- read_csv("data/doshi_centroid_analysis.csv") %>%
 
 iriss_doshi_mod <- lmer(similarity_to_cond_obj ~ 
                           condition + 
-                          (1|object) + 
-                          (1|submitter_id), 
+                          (1|submitter_id) +
+                          (1|object), 
                         data=iriss_doshi)
 summary(iriss_doshi_mod)
 anova(iriss_doshi_mod, type = 3)
@@ -1112,7 +1111,7 @@ doshi_plot <- iriss_doshi %>%
   theme_apa() +
   labs(
     x = "Condition",
-    y = "Homogeneity (Similarity to Condition-Object Centroid)",
+    y = "Homogeneity (Cosine Similarity to Condition-Object Centroid)",
     fill = "Condition"
   ) +
   coord_flip() + # Flipping makes it easier to read the condition names
