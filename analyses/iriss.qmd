@@ -1050,7 +1050,8 @@ print(similarity_posthoc)
 
 
 ```
-## Doshi centroid lmer (Pre-Registered Homogeneity Analysis) 
+
+## Doshi centroid lmer (Pre-Registered Homogeneity Analysis)
 
 ```{r}
 # One operationalization
@@ -1073,7 +1074,6 @@ iriss_doshi_mod <- lmer(similarity_to_cond_obj ~
                         data=iriss_doshi)
 summary(iriss_doshi_mod)
 ```
-
 
 ```{r}
 # Export to .tex table
@@ -1108,7 +1108,9 @@ print(posthoc_results)
 ```
 
 ## Doshi Operationalization
+
 ### Similarity to Centroid by Condition
+
 ```{r}
 doshi_plot <- iriss_doshi %>% 
   mutate(condition = fct_relevel(condition,
@@ -1273,6 +1275,7 @@ ggplot(submitter_creativity, (aes(x=creativity, fill=condition))) +
 ```
 
 # H1: Table
+
 ```{r}
 compliant_trials_demographics %>% 
   group_by(condition) %>% 
@@ -1601,73 +1604,125 @@ ggsave("figures/compliant_semantic_similarity.png", plot=compliant_semantic_simi
 ```
 
 <!-- ```{r} -->
+
 <!-- compliant_raincloud_plot <- compliant_similarities %>% -->
+
 <!--   mutate(condition=fct_relevel(condition, -->
+
 <!--                                "Low-Agency", -->
+
 <!--                                "High-Agency", -->
+
 <!--                                "Control")) %>%  -->
+
 <!--   ggplot(aes(y = condition,  -->
+
 <!--              x = similarity,  -->
+
 <!--              fill = condition)) + -->
 
 <!--   # 1. The Cloud (Density) -->
+
 <!--   # justification = 0 and position_nudge(y = 0.2) keeps it strictly ABOVE the center line -->
+
 <!--   stat_halfeye( -->
+
 <!--     adjust = .5,  -->
+
 <!--     width = .3,      # Limits how 'tall' the density can get -->
+
 <!--     .width = 0,  -->
+
 <!--     justification = 0,  -->
+
 <!--     point_colour = NA, -->
+
 <!--     position = position_nudge(y = 0.15), -->
+
 <!--     alpha = .8 -->
+
 <!--   ) + -->
+
 <!--   geom_point( -->
+
 <!--     aes(color=condition), -->
+
 <!--     alpha = .6, -->
+
 <!--     position = position_jitter(width = .005), -->
+
 <!--     size=1 -->
+
 <!--   ) + -->
 
 <!--   # 3. The Boxplot (The "Horizon") -->
+
 <!--   # width = 0.1 keeps it very thin right on the condition's axis line -->
+
 <!--   geom_boxplot( -->
+
 <!--     width = 0.1, -->
+
 <!--     outlier.shape = NA, -->
+
 <!--     alpha = 0.3 -->
+
 <!--   ) + -->
 
 <!--   # 4. Remove Whitespace & Bleeding -->
+
 <!--   # expand = c(0, 0) removes the default 5% padding around the categories -->
+
 <!--   scale_y_discrete(expand = c(0, 0.5)) +  -->
 
 <!--   scale_x_continuous(breaks = seq(-.5, 1, by = .1)) + -->
+
 <!--   scale_color_manual(values = c( -->
+
 <!--     "Control" = "#2c3e50", -->
+
 <!--     "Low-Agency" = "#e31a1c", -->
+
 <!--     "High-Agency" = "#18bc9c" -->
+
 <!--   )) + -->
+
 <!--   scale_fill_manual(values = c( -->
+
 <!--     "Control" = "#2c3e50", -->
+
 <!--     "Low-Agency" = "#e31a1c", -->
+
 <!--     "High-Agency" = "#18bc9c" -->
+
 <!--   )) + -->
 
 <!--   # Crop the plot area to remove the empty space at the very bottom -->
+
 <!--   coord_cartesian(clip = "on") +  -->
 
 <!--   labs(x = "Homogeneity (Similarity to One's Own Ideas)", y = "") + -->
+
 <!--   theme_apa() + -->
+
 <!--   theme( -->
+
 <!--     legend.position = "none", -->
+
 <!--     # This adjusts the physical spacing between the condition rows -->
+
 <!--     panel.spacing = unit(0, "lines")  -->
+
 <!--   ) -->
 
 <!-- compliant_raincloud_plot -->
+
 <!-- ``` -->
 
 <!-- ```{r} -->
+
 <!-- ggsave("figures/raincloud.png", compliant_raincloud_plot) -->
+
 <!-- ``` -->
 
 Around 24% of the low-agency conversations did not use AI and around 38% of the high-agency conversations did not use AI. Excluding the noncompliant trials did not change the results.
