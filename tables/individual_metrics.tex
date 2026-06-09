@@ -1,42 +1,34 @@
-
-% Table created by stargazer v.5.2.3 by Marek Hlavac, Social Policy Institute. E-mail: marek.hlavac at gmail.com
-% Date and time: Tue, Jan 27, 2026 - 11:50:05
-\begin{table}[!htbp] \centering 
-  \caption{} 
-  \label{} 
-\begin{tabular}{@{\extracolsep{5pt}}lccc} 
-\\[-1.8ex]\hline 
-\hline \\[-1.8ex] 
- & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
-\cline{2-4} 
-\\[-1.8ex] & creativity & originality & usefulness \\ 
-\\[-1.8ex] & (1) & (2) & (3)\\ 
-\hline \\[-1.8ex] 
- scale(age) & $-$0.028 & $-$0.027 & 0.032 \\ 
-  & (0.038) & (0.047) & (0.044) \\ 
-  & & & \\ 
- as.factor(gender)1 & $-$0.060 & $-$0.042 & 0.037 \\ 
-  & (0.080) & (0.099) & (0.092) \\ 
-  & & & \\ 
- as.factor(race)1 & $-$0.015 & 0.001 & $-$0.012 \\ 
-  & (0.092) & (0.113) & (0.106) \\ 
-  & & & \\ 
- conditionHigh-Agency & 0.082 & 0.120 & 0.119 \\ 
-  & (0.089) & (0.110) & (0.103) \\ 
-  & & & \\ 
- conditionLow-Agency & 0.091 & 0.084 & 0.195$^{**}$ \\ 
-  & (0.084) & (0.105) & (0.097) \\ 
-  & & & \\ 
- Constant & 2.501$^{***}$ & 2.464$^{***}$ & 2.774$^{***}$ \\ 
-  & (0.112) & (0.145) & (0.100) \\ 
-  & & & \\ 
-\hline \\[-1.8ex] 
-Observations & 1,592 & 1,592 & 1,592 \\ 
-Log Likelihood & $-$2,495.709 & $-$2,574.969 & $-$2,614.588 \\ 
-Akaike Inf. Crit. & 5,009.417 & 5,167.938 & 5,247.176 \\ 
-Bayesian Inf. Crit. & 5,057.772 & 5,216.293 & 5,295.530 \\ 
-\hline 
-\hline \\[-1.8ex] 
-\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
-\end{tabular} 
-\end{table} 
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+caption={Linear Mixed Models Predicting Creativity, Originality, and Usefulness},
+note{}={* p \num{< 0.05}, ** p \num{< 0.01}, *** p \num{< 0.001}},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]},
+hline{2}={1-4}{solid, black, 0.05em},
+hline{11}={1-4}{solid, black, 0.05em},
+hline{1}={1-4}{solid, black, 0.08em},
+hline{18}={1-4}{solid, black, 0.08em},
+column{2-4}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& (1) & (2) & (3) \\
+(Intercept) & \num{2.537}*** & \num{2.514}*** & \num{2.955}*** \\
+& (\num{0.103}) & (\num{0.136}) & (\num{0.087}) \\
+High-Agency & \num{-0.040} & \num{-0.010} & \num{-0.026} \\
+& (\num{0.091}) & (\num{0.110}) & (\num{0.101}) \\
+Control & \num{-0.082} & \num{-0.077} & \num{-0.162} \\
+& (\num{0.081}) & (\num{0.098}) & (\num{0.090}) \\
+SD (Submitter intercept) & \num{0.225} & \num{0.328} & \num{0.264} \\
+SD (Object intercept) & \num{0.143} & \num{0.199} & \num{0.095} \\
+SD (Residual) & \num{1.134} & \num{1.186} & \num{1.223} \\
+Num.Obs. & \num{1709} & \num{1709} & \num{1709} \\
+R2 Marg. & \num{0.001} & \num{0.001} & \num{0.004} \\
+R2 Cond. & \num{0.053} & \num{0.096} & \num{0.053} \\
+AIC & \num{5358.4} & \num{5543.6} & \num{5622.3} \\
+BIC & \num{5391.1} & \num{5576.3} & \num{5655.0} \\
+ICC & \num{0.1} & \num{0.1} & \num{0.1} \\
+RMSE & \num{1.12} & \num{1.16} & \num{1.21} \\
+\end{talltblr}
+\end{table}

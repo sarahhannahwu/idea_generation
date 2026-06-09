@@ -68,6 +68,8 @@ library(viridis)
 library(stargazer)
 library(factoextra)
 library(cluster)
+library(modelsummary)
+library(broom.mixed)
 
 ```
 
@@ -96,6 +98,8 @@ iriss %>%
 
 ```{r}
 submitter_demographics <- iriss %>%
+  group_by(submitter_id) %>% 
+    slice(1) %>%
   mutate(gender = case_when(gender == "1" ~ "Male",
                             gender == "2" ~ "Female",
                             gender == "3" ~ "Non-binary",
@@ -374,38 +378,38 @@ iriss_manual_ratings <- read_csv("data/iriss_manual_ratings.csv") %>%
 ```
 
 ```{r}
-# evaluator_demographics <- iriss_manual_ratings %>% 
-#   mutate(age = if_else(age < 18 | age > 100, NA_real_, age)) %>% 
-#   mutate(gender = case_when(gender == "1" ~ "Male",
-#                             gender == "2" ~ "Female",
-#                             gender == "3" ~ "Non-binary",
-#                             gender == "4" ~ "Prefer to self-describe")) %>% 
-#   mutate(race = case_when(race == "1" ~ "Black or African-American",
-#                           race == "2" ~ "American Indian or Alaskan Native",
-#                           race == "3" ~ "White or Caucasian",
-#                           race == "4" ~ "Native Hawaiian",
-#                           race == "5" ~ "Hispanic, Latino or Spanish Origin",
-#                           race == "6" ~ "Asian-American",
-#                           race == "7" ~ "Multiracial or self-described")) %>% 
-#   mutate(race = fct_infreq(race)) %>% 
-#   select(age, gender, race) %>% 
-#   tbl_summary(include = c(age, gender, race),
-#               statistic = list(
-#                 all_continuous() ~ "{mean} ({sd})",
-#                 all_categorical() ~ "{n} / {N} ({p}%)"),
-#               digits = all_continuous() ~ 1,
-#               label = list(age = "Age",
-#                            gender = "Gender",
-#                            race = "Race")) %>% 
-#    modify_header(label ~ "**Demographic**")
-# evaluator_demographics
-# 
-# combined_demographics <- tbl_merge(
-#   tbls = list(submitter_demographics, evaluator_demographics),
-#   tab_spanner = c("**Submitters**", "**Evaluators**")
-# )
-# 
-# combined_demographics
+evaluator_demographics <- iriss_manual_ratings %>%
+   mutate(age = if_else(age < 18 | age > 100, NA_real_, age)) %>%
+  mutate(gender = case_when(gender == "1" ~ "Male",
+                             gender == "2" ~ "Female",
+                             gender == "3" ~ "Non-binary",
+                             gender == "4" ~ "Prefer to self-describe")) %>%
+  mutate(race = case_when(race == "1" ~ "Black or African-American",
+                           race == "2" ~ "American Indian or Alaskan Native",
+                          race == "3" ~ "White or Caucasian",
+                          race == "4" ~ "Native Hawaiian",
+                           race == "5" ~ "Hispanic, Latino or Spanish Origin",
+                          race == "6" ~ "Asian-American",
+                           race == "7" ~ "Multiracial or self-described")) %>%
+  mutate(race = fct_infreq(race)) %>%
+   select(age, gender, race) %>%
+   tbl_summary(include = c(age, gender, race),
+               statistic = list(
+                 all_continuous() ~ "{mean} ({sd})",
+                 all_categorical() ~ "{n} / {N} ({p}%)"),
+               digits = all_continuous() ~ 1,
+               label = list(age = "Age",
+                            gender = "Gender",
+                           race = "Race")) %>%
+    modify_header(label ~ "**Demographic**")
+ evaluator_demographics
+
+ combined_demographics <- tbl_merge(
+  tbls = list(submitter_demographics, evaluator_demographics),
+   tab_spanner = c("**Submitters**", "**Evaluators**")
+ )
+
+ combined_demographics
 ```
 
 ```{r}
@@ -530,7 +534,7 @@ summary_table %>%
 ```{r, echo=FALSE}
 label_points <- iriss_manual_ratings_metrics %>% 
   group_by(condition) %>% 
-  sample_n(10)
+  sample_n(5)
 
 # Might want to change the colors 
 iriss_manual_ratings_metrics %>% 
@@ -538,18 +542,18 @@ iriss_manual_ratings_metrics %>%
   summarize(creativity=mean(creativity)) %>% 
   ggplot(aes(x=originality, y=usefulness, fill=creativity)) +
   geom_tile(color="black") +
-  geom_label_repel(
-    data=label_points,
-    aes(label = str_wrap(paste(object, use, sep = ": "), width = 20)),
-    size=2.5,
-    color="black",
-    alpha=.75) +
-  facet_wrap(~condition) +
+  # geom_label_repel(
+  #   data=label_points,
+  #   aes(label = str_wrap(paste(object, use, sep = ": "), width = 20)),
+  #   size=2.5,
+  #   color="black",
+  #   alpha=.75) +
+  # facet_wrap(~condition) +
   scale_fill_gradient(low = "darkgrey", 
                       high = "gold",
                       breaks  = range(iriss_manual_ratings_metrics$creativity, na.rm = TRUE), 
                       labels = c("Not at all", "Maximally")) +
-  labs(fill="Evaluators'\n creativity rating",
+  labs(fill="Overall creativity",
        x="Originality",
        y="Usefulness") +
   theme_apa() +
@@ -934,6 +938,19 @@ compliant_ideas <- compliant_conversations %>%
 
 ```{r}
 write_csv(compliant_ideas, "data/evaluated_compliant_ideas.csv")
+
+# Get the number of unique combinations of submitter and use
+compliant_ideas %>% 
+  distinct(submitter_id, use) %>% 
+  count(use) %>% 
+  arrange(desc(n))
+
+# Filter to combinations of submitter_id + use that appear more than once 
+compliant_ideas %>% 
+  count(submitter_id, use) %>%
+  filter(n > 1) %>%
+  arrange(desc(n))
+  
 ```
 
 ```{r}
@@ -1033,7 +1050,7 @@ print(similarity_posthoc)
 
 
 ```
-## Doshi centroid lmer 
+## Doshi centroid lmer (Pre-Registered Homogeneity Analysis) 
 
 ```{r}
 # One operationalization
@@ -1041,10 +1058,13 @@ compliant_similarities <- read_csv("data/compliant_semantic_similarities.csv")
 
 # Doshi operationalization
 iriss_doshi <- read_csv("data/doshi_centroid_analysis.csv") 
-  # mutate(race_recoded = 
-  #          if_else(race == "3", "White", "Non-White")) %>% 
-  # mutate(gender_recoded =
-  #          if_else(gender == "2", "Female", "Non-Female"))
+
+# Set Low-Agency as the reference level
+iriss_doshi <- iriss_doshi %>%
+  mutate(condition = fct_relevel(condition,
+                                 "Low-Agency",
+                                 "High-Agency",
+                                 "Control"))
 
 iriss_doshi_mod <- lmer(similarity_to_cond_obj ~ 
                           condition + 
@@ -1052,6 +1072,27 @@ iriss_doshi_mod <- lmer(similarity_to_cond_obj ~
                           (1|object), 
                         data=iriss_doshi)
 summary(iriss_doshi_mod)
+```
+
+
+```{r}
+# Export to .tex table
+class(iriss_doshi_mod) <- "lmerMod"
+stargazer(iriss_doshi_mod, type = "latex", out = "tables/homogeneity.tex")
+modelsummary(
+  iriss_doshi_mod,
+  coef_rename = c(
+    "conditionHigh-Agency" = "High-Agency",
+    "conditionControl" = "Control",
+    "SD (Intercept submitter_id)" = "SD (Submitter intercept)",
+    "SD (Intercept object)" = "SD (Object intercept)",
+    "SD (Observations)" = "SD (Residual)"
+  ),
+  output = "tables/homogeneity.tex",
+  title = "Linear Mixed Model Predicting Similarity to Condition-Object Centroid",
+  stars = c(`***` = 0.001, `**` = 0.01, `*` = 0.05)
+)
+
 anova(iriss_doshi_mod, type = 3)
 
 iriss_doshi %>% 
@@ -1067,7 +1108,7 @@ print(posthoc_results)
 ```
 
 ## Doshi Operationalization
-
+### Similarity to Centroid by Condition
 ```{r}
 doshi_plot <- iriss_doshi %>% 
   mutate(condition = fct_relevel(condition,
@@ -1076,45 +1117,50 @@ doshi_plot <- iriss_doshi %>%
                                  "Control")) %>% 
   ggplot(aes(x = condition, y = similarity_to_cond_obj, fill = condition)) +
   # Add the 'Cloud' (Density half-violin)
-  stat_halfeye(
-    adjust = .5, 
-    width = .6, 
-    .width = 0, 
-    justification = -.3, 
-    point_colour = NA
-  ) +
-  # Add the 'Rain' (Raw data points)
-  # geom_dots(
-  #   side = "left", 
-  #   dotsize = .4, 
-  #   justification = 1.1, 
-  #   binwidth = .005,
-  #   alpha = 0.5
+  # stat_halfeye(
+  #   adjust = .5, 
+  #   width = .6, 
+  #   .width = 0, 
+  #   justification = -.3, 
+  #   point_colour = NA
   # ) +
-  # Add a small Boxplot to show the median and quartiles
-  geom_boxplot(
-    width = .15, 
-    outlier.shape = NA, # Outliers are already visible in the 'rain'
+  # Add the 'Rain' (Raw data points)
+  geom_dots(
+    side = "left",
+    dotsize = .75,
+    justification = 1.1,
+    binwidth = .005,
     alpha = 0.5
   ) +
-  stat_summary(fun="mean") +
+  # # Add a small Boxplot to show the median and quartiles
+  # geom_boxplot(
+  #   width = .15, 
+  #   outlier.shape = NA, # Outliers are already visible in the 'rain'
+  #   alpha = 0.5
+  # ) +
+  # Add 95% CI error bars for the mean
+  stat_summary(fun.data="mean_cl_boot", 
+               geom = "errorbar", 
+               width = 0.1) +
+  stat_summary(fun="mean",
+               shape = 21,
+               size = 1) +
   # Aesthetics and Labels
   scale_fill_manual(values = c(
-    "Control" = "#2c3e50",
-    "Low-Agency" = "#e31a1c",
-    "High-Agency" = "#18bc9c"
-  )) +
+    "Control" = "#fde725FF",
+    "Low-Agency" = "#440154FF",
+    "High-Agency" = "#18bc9c")) +
   scale_y_continuous(
     breaks = seq(0, 1, by = 0.1)
   ) +
-  coord_cartesian(clip="on") +
+  # coord_cartesian(clip="on") +
   theme_apa() +
   labs(
-    x = "Condition",
-    y = "Homogeneity (Cosine Similarity to Condition-Object Centroid)",
+    x = "",
+    y = "Homogeneity (Cosine Similarity to\n Condition-Object Centroid)",
     fill = "Condition"
   ) +
-  coord_flip() + # Flipping makes it easier to read the condition names
+  # coord_flip() + # Flipping makes it easier to read the condition names
   theme(legend.position = "none")
 doshi_plot
 ggsave("figures/doshi_homogeneity.png", doshi_plot)
@@ -1226,16 +1272,23 @@ ggplot(submitter_creativity, (aes(x=creativity, fill=condition))) +
   theme(legend.position="none")
 ```
 
+# H1: Table
 ```{r}
 compliant_trials_demographics %>% 
   group_by(condition) %>% 
   get_summary_stats(usefulness, type="mean_sd")
 
+# Change reference level to Low-Agency
+compliant_trials_demographics <- compliant_trials_demographics %>%
+  mutate(condition = fct_relevel(condition,
+                                 "Low-Agency",
+                                 "High-Agency",
+                                 "Control"))
 compliant_originality_mod <- lmer(
   originality ~ 
-    scale(age) + 
-    as.factor(gender) + 
-    as.factor(race) + 
+    # scale(age) + 
+    # as.factor(gender) + 
+    # as.factor(race) + 
     condition +
     (1|object) + 
     (1|submitter_id), data=compliant_trials_demographics)
@@ -1243,9 +1296,9 @@ summary(compliant_originality_mod)
 
 compliant_creativity_mod <- lmer(
   creativity ~ 
-    scale(age) + 
-    as.factor(gender) + 
-    as.factor(race) + 
+    # scale(age) + 
+    # as.factor(gender) + 
+    # as.factor(race) + 
     condition +
     (1|object) + 
     (1|submitter_id), data=compliant_trials_demographics)
@@ -1253,9 +1306,9 @@ summary(compliant_creativity_mod)
 
 compliant_usefulness_mod <- lmer(
   usefulness ~ 
-    scale(age) + 
-    as.factor(gender) + 
-    as.factor(race) + 
+    # scale(age) + 
+    # as.factor(gender) + 
+    # as.factor(race) + 
     condition +
     (1|object) + 
     (1|submitter_id), data= compliant_trials_demographics
@@ -1283,6 +1336,19 @@ class(compliant_creativity_mod) <- "lmerMod"
 class(compliant_originality_mod) <- "lmerMod"
 class(compliant_usefulness_mod) <- "lmerMod"
 stargazer(compliant_creativity_mod, compliant_originality_mod, compliant_usefulness_mod, type = "latex", out = "tables/individual_metrics.tex")
+modelsummary(
+  list(compliant_creativity_mod, compliant_originality_mod, compliant_usefulness_mod),
+  coef_rename = c(
+    "conditionHigh-Agency" = "High-Agency",
+    "conditionControl" = "Control",
+    "SD (Intercept submitter_id)" = "SD (Submitter intercept)",
+    "SD (Intercept object)" = "SD (Object intercept)",
+    "SD (Observations)" = "SD (Residual)"
+  ),
+  output = "tables/individual_metrics.tex",
+  title = "Linear Mixed Models Predicting Creativity, Originality, and Usefulness",
+  stars = c(`***` = 0.001, `**` = 0.01, `*` = 0.05)
+)
 ```
 
 ```{r}
@@ -1397,27 +1463,28 @@ plots <- map(outcomes, function(var) {
                          color = condition,
                          fill = condition)) +
     # 1. Raw data points in the background
-    geom_jitter(alpha = 0.75, 
+    geom_jitter(alpha = 0.3, 
                 width = 0.2, 
                 size = 1.5) +
-    # 2. Mean points on top (using stat_summary for calculation)
+    # Add error bars for better visualization of the mean
+    stat_summary(fun.data = mean_cl_boot, 
+                 geom = "errorbar", 
+                 width = 0.1, 
+                 color = "#333333") +
+        # Mean points on top (using stat_summary for calculation)
     stat_summary(fun = mean, 
                  geom = "point", 
                  shape = 21, 
                  size = 4,
-                 color = "black") +
-    # 3. Optional: Add error bars for better visualization of the mean
-    stat_summary(fun.data = mean_cl_boot, 
-                 geom = "errorbar", 
-                 width = 0.1, 
-                 color = "black") +
+                 color = "#333333") +
     ylim(c(1, 5)) +
-    scale_color_manual(values = c("Control" = "#2c3e50",
-                                "High-Agency" = "#18bc9c",
-                                "Low-Agency" = "#e31a1c")) +
-    scale_fill_manual(values = c("Control" = "#2c3e50",
-                                "High-Agency" = "#18bc9c",
-                                "Low-Agency" = "#e31a1c")) +
+    scale_color_manual(values = c("Control" = "#fde725FF",
+                                  "Low-Agency" = "#440154FF",
+                                  "High-Agency" = "#18bc9c")) +
+    scale_fill_manual(values = c("Control" = "#fde725FF",
+                                 "Low-Agency" = "#440154FF",
+                                 "High-Agency" = "#18bc9c")) +
+    scale_x_discrete(labels = function(x) str_replace(x, "-", "-\n")) +
     labs(x = "", y = str_to_title(var)) +
     theme_apa() +
     theme(legend.position = "none")
@@ -1434,6 +1501,7 @@ ggsave("figures/usefulness.png", plot = plots[[3]])
 
 
 # Combined plot
+
 compliant_evaluation_plot <- creativity + originality + usefulness + plot_annotation(tag_levels = "a")
 compliant_evaluation_plot
 
@@ -1532,75 +1600,75 @@ compliant_semantic_similarity_plot
 ggsave("figures/compliant_semantic_similarity.png", plot=compliant_semantic_similarity_plot)
 ```
 
-```{r}
-compliant_raincloud_plot <- compliant_similarities %>%
-  mutate(condition=fct_relevel(condition,
-                               "Low-Agency",
-                               "High-Agency",
-                               "Control")) %>% 
-  ggplot(aes(y = condition, 
-             x = similarity, 
-             fill = condition)) +
-  
-  # 1. The Cloud (Density)
-  # justification = 0 and position_nudge(y = 0.2) keeps it strictly ABOVE the center line
-  stat_halfeye(
-    adjust = .5, 
-    width = .3,      # Limits how 'tall' the density can get
-    .width = 0, 
-    justification = 0, 
-    point_colour = NA,
-    position = position_nudge(y = 0.15),
-    alpha = .8
-  ) +
-  geom_point(
-    aes(color=condition),
-    alpha = .6,
-    position = position_jitter(width = .005),
-    size=1
-  ) +
-  
-  # 3. The Boxplot (The "Horizon")
-  # width = 0.1 keeps it very thin right on the condition's axis line
-  geom_boxplot(
-    width = 0.1,
-    outlier.shape = NA,
-    alpha = 0.3
-  ) +
-  
-  # 4. Remove Whitespace & Bleeding
-  # expand = c(0, 0) removes the default 5% padding around the categories
-  scale_y_discrete(expand = c(0, 0.5)) + 
-  
-  scale_x_continuous(breaks = seq(-.5, 1, by = .1)) +
-  scale_color_manual(values = c(
-    "Control" = "#2c3e50",
-    "Low-Agency" = "#e31a1c",
-    "High-Agency" = "#18bc9c"
-  )) +
-  scale_fill_manual(values = c(
-    "Control" = "#2c3e50",
-    "Low-Agency" = "#e31a1c",
-    "High-Agency" = "#18bc9c"
-  )) +
-  
-  # Crop the plot area to remove the empty space at the very bottom
-  coord_cartesian(clip = "on") + 
-  
-  labs(x = "Homogeneity (Similarity to One's Own Ideas)", y = "") +
-  theme_apa() +
-  theme(
-    legend.position = "none",
-    # This adjusts the physical spacing between the condition rows
-    panel.spacing = unit(0, "lines") 
-  )
+<!-- ```{r} -->
+<!-- compliant_raincloud_plot <- compliant_similarities %>% -->
+<!--   mutate(condition=fct_relevel(condition, -->
+<!--                                "Low-Agency", -->
+<!--                                "High-Agency", -->
+<!--                                "Control")) %>%  -->
+<!--   ggplot(aes(y = condition,  -->
+<!--              x = similarity,  -->
+<!--              fill = condition)) + -->
 
-compliant_raincloud_plot
-```
+<!--   # 1. The Cloud (Density) -->
+<!--   # justification = 0 and position_nudge(y = 0.2) keeps it strictly ABOVE the center line -->
+<!--   stat_halfeye( -->
+<!--     adjust = .5,  -->
+<!--     width = .3,      # Limits how 'tall' the density can get -->
+<!--     .width = 0,  -->
+<!--     justification = 0,  -->
+<!--     point_colour = NA, -->
+<!--     position = position_nudge(y = 0.15), -->
+<!--     alpha = .8 -->
+<!--   ) + -->
+<!--   geom_point( -->
+<!--     aes(color=condition), -->
+<!--     alpha = .6, -->
+<!--     position = position_jitter(width = .005), -->
+<!--     size=1 -->
+<!--   ) + -->
 
-```{r}
-ggsave("figures/raincloud.png", compliant_raincloud_plot)
-```
+<!--   # 3. The Boxplot (The "Horizon") -->
+<!--   # width = 0.1 keeps it very thin right on the condition's axis line -->
+<!--   geom_boxplot( -->
+<!--     width = 0.1, -->
+<!--     outlier.shape = NA, -->
+<!--     alpha = 0.3 -->
+<!--   ) + -->
+
+<!--   # 4. Remove Whitespace & Bleeding -->
+<!--   # expand = c(0, 0) removes the default 5% padding around the categories -->
+<!--   scale_y_discrete(expand = c(0, 0.5)) +  -->
+
+<!--   scale_x_continuous(breaks = seq(-.5, 1, by = .1)) + -->
+<!--   scale_color_manual(values = c( -->
+<!--     "Control" = "#2c3e50", -->
+<!--     "Low-Agency" = "#e31a1c", -->
+<!--     "High-Agency" = "#18bc9c" -->
+<!--   )) + -->
+<!--   scale_fill_manual(values = c( -->
+<!--     "Control" = "#2c3e50", -->
+<!--     "Low-Agency" = "#e31a1c", -->
+<!--     "High-Agency" = "#18bc9c" -->
+<!--   )) + -->
+
+<!--   # Crop the plot area to remove the empty space at the very bottom -->
+<!--   coord_cartesian(clip = "on") +  -->
+
+<!--   labs(x = "Homogeneity (Similarity to One's Own Ideas)", y = "") + -->
+<!--   theme_apa() + -->
+<!--   theme( -->
+<!--     legend.position = "none", -->
+<!--     # This adjusts the physical spacing between the condition rows -->
+<!--     panel.spacing = unit(0, "lines")  -->
+<!--   ) -->
+
+<!-- compliant_raincloud_plot -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- ggsave("figures/raincloud.png", compliant_raincloud_plot) -->
+<!-- ``` -->
 
 Around 24% of the low-agency conversations did not use AI and around 38% of the high-agency conversations did not use AI. Excluding the noncompliant trials did not change the results.
 
@@ -1667,7 +1735,7 @@ evaluations %>%
   summarize(mean_creativity = mean(creativity)) %>% 
   arrange(desc(mean_creativity))
 
-
+# These participants had ideas with > 3 creativity scores on average across their compliant trials:
 most_creative_participants <- iriss_manual_ratings_metrics %>% 
   filter(submitter_id %in% c("R_626PnHWHD8OebPr",
                              "R_665Usq3Hx2qiS2y",
@@ -1677,6 +1745,10 @@ most_creative_participants <- iriss_manual_ratings_metrics %>%
                              "R_5z92Djt5TP9CJBb",
                              "R_7nZ3ULt8wE34mW6",
                              "R_6dB0PTZKZgdwBAS"))
+
+# Which conditions were they in?
+most_creative_participants %>% 
+  distinct(submitter_id, condition)
   
 ```
 
@@ -1719,6 +1791,14 @@ process_vars_means <- process_vars %>%
 process_vars_means %>% 
   group_by(condition) %>%
   get_summary_stats(conv_with_ai_mean, type="mean_sd")
+
+process_vars_means %>% 
+  group_by(condition) %>%
+  get_summary_stats(consideration_aid_mean, type="mean_sd")
+
+process_vars_means %>% 
+  group_by(condition) %>%
+  get_summary_stats(intrinsic_motivation_mean, type="mean_sd")
 # 
 # # Plot intrinsic motivation
 # intrinsic_motivation_p <- evaluations %>%
@@ -1741,6 +1821,34 @@ process_vars_means %>%
 #   theme(legend.position="none")
 # 
 # ggsave("figures/intrinsic_motivation.png", plot=intrinsic_motivation_p)
+```
+
+## Internal Consistency
+
+```{r}
+# Omega for intrinsic motivation items
+intrinsic_motivation_items <- process_vars %>% 
+  select(starts_with("intrinsic_motivation_")) %>% 
+  mutate(across(everything(), as.numeric))
+
+psych::omega(intrinsic_motivation_items)
+
+# consideration_aid_items <- process_vars %>% 
+#   filter(condition != "Control") %>% 
+#   select(starts_with("consideration_aid_")) %>% 
+#   mutate(across(everything(), as.numeric)) %>% 
+#   drop_na()
+# 
+# psych::omega(consideration_aid_items)
+
+# conv_with_ai_items <- process_vars %>% 
+#   filter(condition != "Control") %>% 
+#   select(starts_with("conv_with_ai")) %>% 
+#   mutate(across(everything(), as.numeric)) %>% 
+#   distinct() %>% 
+#   drop_na()
+# 
+# psych::omega(conv_with_ai_items)
 ```
 
 ```{r}

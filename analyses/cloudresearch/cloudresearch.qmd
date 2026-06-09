@@ -9,6 +9,17 @@ library(lubridate)
 ```
 
 ```{r}
+
+qualtrics_api_credentials(
+  api_key = "LeAkzh7rVjF9cUNbcpIn8aUbUGnt4IntptFvlrOq",
+  base_url = "stanforduniversity.sjc1.qualtrics.com", 
+  install = TRUE,
+  overwrite = TRUE
+)
+
+# Force R to reload the new credentials
+readRenviron("~/.Renviron")
+
 cloudresearch <- fetch_survey(surveyID = "SV_8ccaK54JnClG1Bs",
                               label = FALSE,
                               convert = FALSE) %>% 
@@ -756,4 +767,4 @@ cleaned_names %>%
   jtools::theme_apa() +
   theme(legend.position = "none")
 ```
-High-Agency and Unstructured took the longest time to complete the survey. Control participants were the fastest. 
+High-Agency and Unstructured took the longest time to complete the survey. Control participants were the fastest, which is what would be expected. 
