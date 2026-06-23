@@ -1,3 +1,4 @@
 *.csv
 .Rproj.user
 receipts/
+.DS_Store
