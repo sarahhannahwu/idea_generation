@@ -1,5 +1,6 @@
 *.csv
 .Rproj.user
+idea_generation.Rproj
 receipts/
 .DS_Store
 .vscode
@@ -230,3 +231,5 @@ rsconnect/
 sources/
 creative_uses_api/
 _publish.yml
+doshi_centroid_model.tex
+homogeneity.tex
