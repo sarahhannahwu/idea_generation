@@ -75,10 +75,11 @@ library(broom.mixed)
 
 ## IRiSS Sample
 
-Note: The analyses on poster start at 'H1 and H2: Compliant Analyses.'
+Note: The analyses on C&C '26 poster start at 'H1 and H2: Compliant Analyses.'
 
 ```{r}
-iriss <- read_csv("data/iriss.csv") %>% 
+
+iriss <- read_csv("../../data/iriss.csv") %>% 
   slice(-(1:2)) %>% 
   filter(attn_check == "4" & attn_check_4_TEXT == "8") %>% 
   rename(condition = FL_3_DO) %>% 
@@ -140,15 +141,15 @@ iriss_memory_check <- iriss %>%
 
 # Check the % of participants who remembered what the instructions said
 iriss_memory_check %>% 
+  group_by(condition) |> 
   count(memory_check_result) %>% 
   mutate(prop=n/sum(n))
 
-iriss_memory_check %>% 
-  count(condition)
 
 
 ```
 
+Most participants in the control and high-agency conditions recalled the instructions, but only 56% of participants in the low-agency condition correctly recalled the instructions.
 ```{r}
 # Convert to long format
 iriss_trial_data <- iriss %>% 
@@ -165,7 +166,7 @@ iriss_trial_data <- iriss %>%
   relocate(object, .after = "trial") %>% 
   mutate(object = if_else(object == "bubble", "bubblewrap", object))
 
-write_csv(iriss_trial_data, "data/iriss_trial_data.csv")
+write_csv(iriss_trial_data, "../../data/iriss_trial_data.csv")
 ```
 
 ```{r}
@@ -368,7 +369,7 @@ Participants in the high-agency condition perceived their ideas as more useful t
 ## Crowdsourced originality ratings
 
 ```{r}
-iriss_manual_ratings <- read_csv("data/iriss_manual_ratings.csv") %>% 
+iriss_manual_ratings <- read_csv("../../data/iriss_manual_ratings.csv") %>% 
   filter(DistributionChannel=="anonymous") %>% 
   filter(attn_check == "4" & attn_check_4_TEXT == "8") %>% 
   drop_na(frisbee.0.condition)  %>%  # Drop rows with missing data (experimenter error) 
@@ -465,7 +466,7 @@ process_vars <- iriss_trial_data %>%
 
 
 
-write_csv(iriss_manual_ratings_metrics, "data/iriss_manual_ratings_metrics.csv")
+write_csv(iriss_manual_ratings_metrics, "../../data/iriss_manual_ratings_metrics.csv")
 ```
 
 ### Descriptives
@@ -482,9 +483,6 @@ iriss_manual_ratings_metrics %>%
 
 cor.test(iriss_manual_ratings_metrics$use_word_count, iriss_manual_ratings_metrics$originality)
 
-ggplot(iriss_manual_ratings_metrics, aes(x=use_word_count, y=originality, color=condition)) +
-  geom_jitter() +
-  geom_smooth(method="lm")
 
 
 ```
@@ -529,52 +527,6 @@ summary_table %>%
   ) 
 ```
 
-### Heatmap of creativity "sweet spots"
-
-```{r, echo=FALSE}
-label_points <- iriss_manual_ratings_metrics %>% 
-  group_by(condition) %>% 
-  sample_n(5)
-
-# Might want to change the colors 
-iriss_manual_ratings_metrics %>% 
-  group_by(originality, usefulness) %>% 
-  summarize(creativity=mean(creativity)) %>% 
-  ggplot(aes(x=originality, y=usefulness, fill=creativity)) +
-  geom_tile(color="black") +
-  # geom_label_repel(
-  #   data=label_points,
-  #   aes(label = str_wrap(paste(object, use, sep = ": "), width = 20)),
-  #   size=2.5,
-  #   color="black",
-  #   alpha=.75) +
-  # facet_wrap(~condition) +
-  scale_fill_gradient(low = "darkgrey", 
-                      high = "gold",
-                      breaks  = range(iriss_manual_ratings_metrics$creativity, na.rm = TRUE), 
-                      labels = c("Not at all", "Maximally")) +
-  labs(fill="Overall creativity",
-       x="Originality",
-       y="Usefulness") +
-  theme_apa() +
-  theme(
-    legend.position = "bottom",
-    legend.title = element_text(vjust = 1, hjust = 0.5),
-    legend.text.align = 0.5
-  ) +
-  guides(
-    fill = guide_colorbar(
-      title.position = "top",    # put title above bar
-      title.hjust = 0.5,         # center title
-      label.hjust = 0.5,         # center tick labels
-      barwidth = unit(6, "cm"),  # adjust width as needed
-      barheight = unit(0.4, "cm") 
-    )
-  )
-
-
-
-```
 
 How much did people index on each dimension of creativity?
 
@@ -626,7 +578,7 @@ ggsave("figures/usefulness.png", plot = plots[[3]])
 combined_evaluation_plot <- creativity + originality + usefulness + plot_annotation(tag_levels = "a")
 combined_evaluation_plot
 
-ggsave(plot=combined_evaluation_plot, filename="figures/evaluations.png")
+ggsave(plot=combined_evaluation_plot, filename="../../figures/evaluations.png")
 ```
 
 ```{r, echo=FALSE}
@@ -776,10 +728,6 @@ ggplot(prop_by_threshold_use, aes(x = threshold, y = prop, color = condition, gr
 
 ```
 
-```{r}
-
-```
-
 low-agency participants produced the most creative ideas, followed by high-agency participants, then participants in the control condition.
 
 What were the highest-performing ideas?
@@ -813,14 +761,15 @@ compliant_ideas %>%
 ## H2: Semantic Similarity
 
 ```{r}
-iriss_semantic_similarities <- read_csv("data/iriss_semantic_similarities.csv") %>% 
-    mutate(condition=case_when(condition=="Passenger"~"Low-Agency",
-                             condition=="Pilot"~"High-Agency",
+iriss_semantic_similarities <- read_csv("../../data/iriss_semantic_similarities.csv") %>% 
+    mutate(condition=case_when(condition=="low-agency"~"Low-Agency",
+                             condition=="high-agency"~"High-Agency",
                              condition=="Control"~"Control"))
-# iriss_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|submitter_id), data=iriss_semantic_similarities)
-# summary(iriss_semantic_similarity_mod)
-# 
-# sjPlot::tab_model(iriss_semantic_similarity_mod)
+
+iriss_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|submitter_id), data=iriss_semantic_similarities)
+summary(iriss_semantic_similarity_mod)
+
+sjPlot::tab_model(iriss_semantic_similarity_mod)
 
 
 

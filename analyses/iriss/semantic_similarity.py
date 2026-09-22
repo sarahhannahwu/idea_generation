@@ -15,7 +15,7 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # Load the data
 
-data_path = '~/Git_Projects/idea_generation/data/evaluated_compliant_ideas.csv'  # Update with your actual data path
+data_path = '~/Git_Projects/idea_generation/data/iriss_manual_ratings_metrics.csv'  # Update depending on data file
 df = pd.read_csv(data_path)
 
 # Compute the pairwise cosine similarity of ideas by condition and object
@@ -59,7 +59,7 @@ for (condition, obj), group in df.groupby(['condition', 'object']):
 results_df = pd.DataFrame(results)
 
 # Save results to CSV
-output_path = os.path.expanduser('~/Git_Projects/psych252/final-project-sarah-wu/data/pairwise_similarities.csv')  # Update with your desired output path
+output_path = os.path.expanduser('~/Git_Projects/idea_generation/data/iriss_semantic_similarities.csv')  # Update with your desired output path
 results_df.to_csv(output_path, index=False)
 
 # Compute mean and standard deviation of similarities for each condition
