@@ -70,7 +70,11 @@ library(factoextra)
 library(cluster)
 library(modelsummary)
 library(broom.mixed)
-
+library(tidycomm)
+library(jsonlite)
+library(stringdist)
+library(purrr)
+library(tidytext)
 ```
 
 ## IRiSS Sample
@@ -167,6 +171,262 @@ iriss_trial_data <- iriss %>%
   mutate(object = if_else(object == "bubble", "bubblewrap", object))
 
 write_csv(iriss_trial_data, "../../data/iriss_trial_data.csv")
+```
+
+### Chat Logs
+
+```{r}
+paste_events <- iriss_trial_data |> 
+  filter(condition != "Control") |>
+  select(submitter_id,
+         condition,
+         use,
+         ends_with("pasteEvents",
+                   ignore.case = FALSE))
+
+write_csv(paste_events, "../../data/paste_events.csv")
+```
+
+
+```{r}
+paste_events <- read_csv("../../data/paste_events.csv", show_col_types = FALSE)
+
+count_paste_cell <- function(x) {
+  if (is.na(x) || x == "[]" || x == "") return(0L)
+  parsed <- tryCatch(fromJSON(x, simplifyDataFrame = TRUE), error = function(e) NULL)
+  if (is.null(parsed) || nrow(parsed) == 0) return(0L)
+  nrow(parsed)
+}
+
+# Take ONE row per person (the pasteEvents value is duplicated across all their rows)
+person_counts <- paste_events |>
+  filter(condition != "Control") |> 
+  group_by(submitter_id) |>
+  slice(1) |>                     # <-- key change: pick first row, don't sum across rows
+  ungroup() |>
+  mutate(
+    q1_total = map_int(q1_pasteEvents, count_paste_cell),
+    q2_total = map_int(q2_pasteEvents, count_paste_cell),
+    q3_total = map_int(q3_pasteEvents, count_paste_cell),
+    total_paste_events = q1_total + q2_total + q3_total
+  ) |>
+  select(submitter_id, condition, q1_total, q2_total, q3_total, total_paste_events)
+
+person_counts
+```
+```{r}
+person_counts |> 
+  group_by(condition) |> 
+  get_summary_stats(total_paste_events,
+                    type = "mean_sd")
+
+
+# --- Independent samples t-test ---
+t_result <- t.test(total_paste_events ~ condition, data = person_counts)
+t_result
+```
+
+
+```{r}
+trial_data <- read_csv("../../data/iriss_trial_data.csv", show_col_types = FALSE)
+
+# ============================================================
+# Helpers (unchanged)
+# ============================================================
+parse_paste_cell <- function(x) {
+  if (is.na(x) || x == "[]" || x == "") {
+    return(tibble(content = character(0), finalContent = character(0),
+                   timestamp = character(0)))
+  }
+  parsed <- tryCatch(fromJSON(x, simplifyDataFrame = TRUE), error = function(e) NULL)
+  if (is.null(parsed) || nrow(parsed) == 0) {
+    return(tibble(content = character(0), finalContent = character(0),
+                   timestamp = character(0)))
+  }
+  tibble(content = parsed$content, finalContent = parsed$finalContent, timestamp = parsed$timestamp)
+}
+
+parse_chatlog_cell <- function(x) {
+  empty <- tibble(ai_message = character(0), ai_timestamp = character(0))
+  if (is.na(x) || x == "[]" || x == "" || x == "NO_CHAT_DATA") return(empty)
+  parsed <- tryCatch(fromJSON(x, simplifyDataFrame = TRUE), error = function(e) NULL)
+  if (is.null(parsed) || length(parsed) == 0) return(empty)
+  if (!is.data.frame(parsed)) parsed <- as_tibble(parsed)
+  ai_rows <- parsed |> filter(type == "ai_response")
+  if (nrow(ai_rows) == 0) return(empty)
+  tibble(ai_message = ai_rows$content, ai_timestamp = ai_rows$timestamp)
+}
+
+# ============================================================
+# Step 1: Paste content
+# ============================================================
+person_level_paste <- trial_data |>
+  group_by(submitter_id) |>
+  slice(1) |>
+  ungroup() |>
+  select(submitter_id, condition, q1_pasteEvents, q2_pasteEvents, q3_pasteEvents) |>
+  filter(condition != "Control")
+
+paste_content <- person_level_paste |>
+  pivot_longer(cols = ends_with("pasteEvents", ignore.case = FALSE),
+               names_to = "question", values_to = "raw_json") |>
+  mutate(question = str_remove(question, "_pasteEvents"),
+         events = map(raw_json, parse_paste_cell)) |>
+  select(-raw_json) |>
+  unnest(events, keep_empty = FALSE) |>
+  mutate(word_count = str_count(str_trim(content), "\\S+"))
+
+# ============================================================
+# Step 2: AI chat log
+# ============================================================
+person_level_chat <- trial_data |>
+  group_by(submitter_id) |>
+  slice(1) |>
+  ungroup() |>
+  select(submitter_id, condition, q1_chatConversationLog, q2_chatConversationLog, q3_chatConversationLog) |>
+  filter(condition != "Control")
+
+chat_log <- person_level_chat |>
+  pivot_longer(cols = ends_with("chatConversationLog", ignore.case = FALSE),
+               names_to = "question", values_to = "raw_json") |>
+  mutate(question = str_remove(question, "_chatConversationLog")) |>
+  mutate(events = map(raw_json, parse_chatlog_cell)) |>
+  select(-raw_json) |>
+  unnest(events, keep_empty = FALSE)
+
+# ============================================================
+# Step 3: Combined flag — exact substring OR Jaro-Winkler similarity
+# ============================================================
+flag_ai_match <- function(paste_df, chat_df, jw_threshold = 0.8) {
+  get_match_info <- function(text, sid, q) {
+    candidates <- chat_df |> filter(submitter_id == sid, question == q)
+    if (nrow(candidates) == 0 || is.na(text) || text == "") {
+      return(tibble(best_match = NA_character_, similarity = NA_real_,
+                     exact_substring = FALSE))
+    }
+    # Base R substring check -- avoids the fixed() masking issue entirely
+    contains <- grepl(text, candidates$ai_message, fixed = TRUE)
+    sims <- 1 - stringdist(text, candidates$ai_message, method = "jw")
+    best_idx <- which.max(sims)
+    tibble(
+      best_match = candidates$ai_message[best_idx],
+      similarity = sims[best_idx],
+      exact_substring = any(contains)
+    )
+  }
+
+  paste_df |>
+    mutate(match_result = pmap(list(content, submitter_id, question), get_match_info)) |>
+    unnest(match_result) |>
+    mutate(likely_ai_paste = exact_substring | (!is.na(similarity) & similarity >= jw_threshold))
+}
+
+paste_content_flagged <- flag_ai_match(paste_content, chat_log, jw_threshold = 0.8)
+
+# ============================================================
+# Summary, by condition
+# ============================================================
+paste_content_flagged |>
+  group_by(condition) |>
+  summarise(
+    n_paste_events   = n(),
+    n_exact_substring = sum(exact_substring, na.rm = TRUE),
+    n_jw_only        = sum(likely_ai_paste & !exact_substring, na.rm = TRUE),
+    n_likely_ai      = sum(likely_ai_paste, na.rm = TRUE),
+    pct_likely_ai    = mean(likely_ai_paste, na.rm = TRUE),
+    mean_similarity  = mean(similarity, na.rm = TRUE)
+  )
+```
+
+
+```{r}
+write_csv(paste_content_flagged, "../../data/paste_content_with_ai_similarity.csv")
+```
+
+### Significance Tests
+```{r}
+# ============================================================
+# Person-level aggregation
+# ============================================================
+
+# Start from everyone in low/high-agency (includes people with 0 paste events)
+person_summary <- person_level_paste |>
+  select(submitter_id, condition) |>
+  distinct() |>
+  left_join(
+    paste_content_flagged |>
+      group_by(submitter_id) |>
+      summarise(
+        n_paste_events    = n(),
+        n_exact_substring = sum(exact_substring, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    by = "submitter_id"
+  ) |>
+  mutate(
+    n_paste_events    = replace_na(n_paste_events, 0L),
+    n_exact_substring = replace_na(n_exact_substring, 0L),
+    prop_exact_substring = if_else(n_paste_events > 0,
+                                     n_exact_substring / n_paste_events,
+                                     NA_real_)
+  )
+
+# ============================================================
+# Descriptives
+# ============================================================
+person_summary |>
+  group_by(condition) |>
+  summarise(
+    n = n(),
+    mean_paste_events = mean(n_paste_events), sd_paste_events = sd(n_paste_events),
+    n_with_pastes = sum(!is.na(prop_exact_substring)),
+    mean_prop_exact = mean(prop_exact_substring, na.rm = TRUE),
+    sd_prop_exact = sd(prop_exact_substring, na.rm = TRUE)
+  )
+
+# ============================================================
+# 1. Independent samples t-test: number of paste events (all people)
+# ============================================================
+t_paste_count <- t.test(n_paste_events ~ condition, data = person_summary)
+t_paste_count
+
+# Non-parametric check (paste counts are typically zero-inflated/skewed)
+wilcox.test(n_paste_events ~ condition, data = person_summary)
+
+# ============================================================
+# 2. Independent samples t-test: proportion of exact substring matches
+#    (only people who had at least one paste event)
+# ============================================================
+prop_data <- person_summary |> filter(!is.na(prop_exact_substring))
+
+t_prop_exact <- t.test(prop_exact_substring ~ condition, data = prop_data)
+t_prop_exact
+
+```
+
+## Lexical Rarity
+
+```{r}
+# Build a word-frequency table across ALL responses in your dataset
+word_freq <- uses_normalized |>
+  unnest_tokens(word, use_clean) |>
+  anti_join(stop_words, by = "word") |>
+  count(word, sort = TRUE) |>
+  mutate(doc_freq = n / sum(n))   # relative frequency across the whole corpus
+
+# Score each response by how rare its words are (lower avg freq = more niche)
+response_rarity <- uses_normalized |>
+  mutate(row_id = row_number()) |>
+  unnest_tokens(word, use_clean) |>
+  anti_join(stop_words, by = "word") |>
+  left_join(word_freq, by = "word") |>
+  group_by(row_id) |>
+  summarise(
+    mean_word_rarity = mean(-log(doc_freq), na.rm = TRUE),  # higher = rarer words
+    min_word_freq = min(doc_freq, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  left_join(uses_normalized |> mutate(row_id = row_number()), by = "row_id")
 ```
 
 ```{r}
@@ -784,9 +1044,9 @@ This is JUST on the submission side. Here, we identify the trials on which high-
 ```{r}
 
 # Some of these were not evaluated
-no_chats_high_agency <- read_csv("data/pilot_no_first_message.csv")
+no_chats_high_agency <- read_csv("../../data/pilot_no_first_message.csv")
 
-no_chats_low_agency <- read_csv("data/passenger_no_first_message.csv")
+no_chats_low_agency <- read_csv("../../data/passenger_no_first_message.csv")
 
 noncompliant_conversations <- bind_rows(no_chats_high_agency, no_chats_low_agency) %>% 
   rename(submitter_id = participant_id) %>% 
@@ -808,7 +1068,7 @@ noncompliant_conversations %>%
 
 
 evaluated_conversations <- iriss_manual_ratings_metrics %>% 
-  group_by(submitter_id, condition, object) %>% 
+  group_by(submitter_id, rater_id, condition, object) %>% 
   summarize(aggregated_uses = paste(use, collapse = "; "))
 
 
@@ -830,7 +1090,7 @@ compliant_conversations %>%
   summarize(unique_people = n_distinct(submitter_id))
 
 
-write_csv(compliant_conversations, "data/evaluated_compliant_conversations.csv")
+write_csv(compliant_conversations, "../../data/evaluated_compliant_conversations.csv")
 
 compliant_conversations_process <- compliant_conversations %>% 
   left_join(process_vars, by=c("submitter_id", "object")) %>%
@@ -880,24 +1140,18 @@ compliant_conversations_process <- compliant_conversations %>%
 compliant_ideas <- compliant_conversations %>% 
   separate_rows(aggregated_uses, sep = "; ") %>% 
   rename(use="aggregated_uses") %>% 
-  distinct(submitter_id, condition, object, use)
+  distinct(submitter_id, rater_id, condition, object, use)
 ```
 
 ### Evaluated compliant ideas
 
 ```{r}
-write_csv(compliant_ideas, "data/evaluated_compliant_ideas.csv")
+write_csv(compliant_ideas, "../../data/evaluated_compliant_ideas.csv")
 
 # Get the number of unique combinations of submitter and use
 compliant_ideas %>% 
   distinct(submitter_id, use) %>% 
   count(use) %>% 
-  arrange(desc(n))
-
-# Filter to combinations of submitter_id + use that appear more than once 
-compliant_ideas %>% 
-  count(submitter_id, use) %>%
-  filter(n > 1) %>%
   arrange(desc(n))
   
 ```
@@ -963,8 +1217,8 @@ compliant_ideas %>%
 
 ```{r}
 # Pre-processed text
-embeddings <- read_csv("data/evaluated_compliant_ideas_with_embeddings.csv")
-pairwise <- read_csv("data/pairwise_similarities.csv") 
+embeddings <- read_csv("../../data/evaluated_compliant_ideas_with_embeddings.csv")
+pairwise <- read_csv("../../data/pairwise_similarities.csv") 
 ```
 
 ## H1 and 2: Compliant analyses
@@ -1166,7 +1420,7 @@ iriss_manual_ratings_metrics %>%
 
 ```{r}
 evaluations <- iriss_manual_ratings_metrics %>% 
-  semi_join(compliant_ideas, by=c("submitter_id", "object", "use"))
+  semi_join(compliant_ideas, by=c("submitter_id", "rater_id", "object", "use"))
 ```
 
 ### Linear mixed model with compliant data
@@ -1302,6 +1556,71 @@ modelsummary(
   stars = c(`***` = 0.001, `**` = 0.01, `*` = 0.05)
 )
 ```
+
+### Interrater Reliability 
+```{r}
+# Compute interrater reliability of creativity ratings
+# Long data format
+
+library(performance) # or library(psych)
+
+# 1. Prepare long data with unit identifier
+df_long <- compliant_trials_demographics %>%
+  mutate(unit_id = paste(submitter_id, use, sep = "_"))
+
+# 2. Fit a crossed random-effects model using lmer
+# Creativity ~ (1 | unit_id) + (1 | rater_id)
+creativiy_fit <- lmer(creativity ~ (1 | unit_id) + (1 | rater_id), data = df_long).
+
+originality_fit <- lmer(originality ~ (1 | unit_id) + (1 | rater_id), data = df_long)
+
+usefulness_fit <- lmer(usefulness ~ (1 | unit_id) + (1 | rater_id), data = df_long)
+# 3. Extract ICC values automatically
+icc(creativity_fit)
+icc(originality_fit)
+icc(usefulness_fit)
+summary(fit)
+```
+
+```{r}
+# Repeat the above analyses with an alternative model that includes random effect for rater_id
+
+compliant_originality_aug <- lmer(
+  originality ~ 
+    # scale(age) + 
+    # as.factor(gender) + 
+    # as.factor(race) + 
+    condition +
+    (1|object) + 
+    (1|submitter_id) +
+    (1|rater_id), data=compliant_trials_demographics)
+summary(compliant_originality_aug)
+
+compliant_creativity_aug <- lmer(
+  creativity ~ 
+    # scale(age) + 
+    # as.factor(gender) + 
+    # as.factor(race) + 
+    condition +
+    (1|object) + 
+    (1|submitter_id) +
+    (1|rater_id), data=compliant_trials_demographics)
+summary(compliant_creativity_aug)
+
+compliant_usefulness_aug <- lmer(
+  usefulness ~ 
+    # scale(age) + 
+    # as.factor(gender) + 
+    # as.factor(race) + 
+    condition +
+    (1|object) + 
+    (1|submitter_id) +
+    (1|rater_id), data= compliant_trials_demographics
+)
+
+summary(compliant_usefulness_aug)
+```
+
 
 ```{r}
 homogeneity_demographics <- left_join(compliant_similarities, demographics_recoded, by="submitter_id")
