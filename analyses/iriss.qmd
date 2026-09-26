@@ -1020,13 +1020,27 @@ compliant_ideas %>%
 
 ## H2: Semantic Similarity
 
-```{r}
-iriss_semantic_similarities <- read_csv("../../data/iriss_semantic_similarities.csv") %>% 
-    mutate(condition=case_when(condition=="low-agency"~"Low-Agency",
-                             condition=="high-agency"~"High-Agency",
-                             condition=="Control"~"Control"))
 
-iriss_semantic_similarity_mod <- lmer(similarity ~ condition + (1|object) + (1|submitter_id), data=iriss_semantic_similarities)
+```{r}
+
+# Analysis from doshi_analysis.py
+iriss_semantic_similarities <- read_csv("../../data/iriss_semantic_similarities.csv") 
+
+# NOTE: Similarity, not distance
+# NOTE: The number of submitters is 141 here because not all people's ideas were rated
+
+# Set Low-Agency as the reference level
+# Sets "Level_3" as the new reference baseline (Level 1)
+# Set Low-Agency as the reference level
+iriss_semantic_similarities <- iriss_semantic_similarities %>%
+  mutate(condition = fct_relevel(condition,
+                                 "Low-Agency",
+                                 "High-Agency",
+                                 "Control"))
+
+
+iriss_semantic_similarity_mod <- lmer(similarity_to_cond_obj ~ condition + (1|object) + (1|submitter_id), data=iriss_semantic_similarities)
+
 summary(iriss_semantic_similarity_mod)
 
 sjPlot::tab_model(iriss_semantic_similarity_mod)
@@ -1035,7 +1049,7 @@ sjPlot::tab_model(iriss_semantic_similarity_mod)
 
 ```
 
-According to the linear mixed model, participants in the low-agency condition produce significantly more similar ideas than the Control group.
+
 
 ### Noncompliance in AI Access conditions
 

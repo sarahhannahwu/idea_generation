@@ -4,15 +4,9 @@ from scipy.spatial.distance import cosine
 from sentence_transformers import SentenceTransformer
 
 # 1. Load data
-file_path = 'data/evaluated_compliant_ideas.csv' 
+file_path = '../../data/iriss_manual_ratings_metrics.csv' 
 df = pd.read_csv(file_path)
 
-# 1.5 Sample one idea per submitter-object combination to remove dependence
-df = (
-    df.groupby(["submitter_id", "object"], group_keys=False)
-      .sample(n=1, random_state=42)
-      .reset_index(drop=True)
-)
 
 # 2. Initialize the Open-Source Model
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -53,7 +47,7 @@ for idx, current_embedding in enumerate(all_embeddings):
 
 # Save results
 df['similarity_to_cond_obj'] = results
-df.to_csv('data/doshi_centroid_analysis.csv', index=False)
+df.to_csv('../../data/iriss_semantic_similarities.csv', index=False)
 
 # Print summary statistics by condition
 summary = df.groupby('condition')['similarity_to_cond_obj'].agg(['mean', 'std', 'count'])
