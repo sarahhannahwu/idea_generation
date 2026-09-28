@@ -98,7 +98,10 @@ iriss <- read_csv("../../data/iriss.csv") %>%
 iriss %>% 
   get_summary_stats(age, type="mean_sd")
 
+text_feedback <- iriss |> 
+  select(submitter_id, condition, text_feedback)
 
+write_csv(text_feedback, "../../data/text_feedback.csv")
 ```
 
 ```{r}
