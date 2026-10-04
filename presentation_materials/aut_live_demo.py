@@ -286,7 +286,7 @@ AUDIENCE_HTML = """<!doctype html><meta charset=utf-8>
  #msg{margin-top:14px;font-weight:600;color:#2a7}
 </style>
 <h1>Think of creative uses for <u>__OBJECT__</u></h1>
-<p>List as many <b>unusual</b> uses as you can. Submit one idea at a time; you can send as many as you like.</p>
+<p>For this task, you'll be asked to come up with creative uses for everyday objects. When we say "creative" we mean how original and useful the idea is. Submit your ideas one at a time below. </p>
 <textarea id=t rows=3 maxlength=200 placeholder="e.g. ..." autofocus></textarea>
 <button onclick=send()>Submit idea</button>
 <div id=msg></div>
@@ -307,7 +307,7 @@ PRESENTER_HTML = """<!doctype html><meta charset=utf-8><title>Presenter</title>
 <style>
  body{font-family:system-ui,sans-serif;margin:0;background:#111;color:#eee}
  #top{display:flex;gap:24px;align-items:center;padding:14px 24px;background:#1b1b1b;flex-wrap:wrap}
- #qr{width:150px;height:150px;background:#fff;padding:6px;border-radius:8px}
+ #qr{width:150px;height:150px;background:#fff;padding:6px;border-radius:8px;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
  #url{font-size:1.6rem;font-weight:700;color:#8fd}
  #count{font-size:3rem;font-weight:800}
  button{font-size:1.2rem;padding:12px 22px;border:0;border-radius:10px;margin-right:8px;cursor:pointer}

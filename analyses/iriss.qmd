@@ -1279,7 +1279,7 @@ print(similarity_posthoc)
 compliant_similarities <- read_csv("data/compliant_semantic_similarities.csv")
 
 # Doshi operationalization
-iriss_doshi <- read_csv("data/doshi_centroid_analysis.csv") 
+iriss_doshi <- read_csv("../../data/doshi_centroid_analysis.csv") 
 
 # Set Low-Agency as the reference level
 iriss_doshi <- iriss_doshi %>%
@@ -1338,55 +1338,73 @@ doshi_plot <- iriss_doshi %>%
                                  "Low-Agency",
                                  "High-Agency",
                                  "Control")) %>% 
-  ggplot(aes(x = condition, y = similarity_to_cond_obj, fill = condition)) +
-  # Add the 'Cloud' (Density half-violin)
-  # stat_halfeye(
-  #   adjust = .5, 
-  #   width = .6, 
-  #   .width = 0, 
-  #   justification = -.3, 
-  #   point_colour = NA
-  # ) +
-  # Add the 'Rain' (Raw data points)
-  geom_dots(
-    side = "left",
-    dotsize = .75,
-    justification = 1.1,
-    binwidth = .005,
-    alpha = 0.5
-  ) +
-  # # Add a small Boxplot to show the median and quartiles
-  # geom_boxplot(
-  #   width = .15, 
-  #   outlier.shape = NA, # Outliers are already visible in the 'rain'
-  #   alpha = 0.5
-  # ) +
+  ggplot(aes(x = condition, 
+             y = similarity_to_cond_obj, 
+             fill = condition,
+             color = condition,
+             shape = object)) +
   # Add 95% CI error bars for the mean
-  stat_summary(fun.data="mean_cl_boot", 
-               geom = "errorbar", 
-               width = 0.1) +
-  stat_summary(fun="mean",
-               shape = 21,
-               size = 1) +
-  # Aesthetics and Labels
+  stat_summary(
+    fun.data = "mean_cl_boot", 
+    geom = "errorbar", 
+    width = 0.1,
+    position = position_dodge(width = 0.4)
+  ) +
+  stat_summary(
+    fun = "mean",
+    geom = "point",
+    size = 3,
+    position = position_dodge(width = 0.4)
+  ) +
+  # Add Significance Bracket above Low-Agency and High-Agency
+  geom_signif(
+    comparisons = list(c("Low-Agency", "High-Agency")),
+    annotations = "*",
+    y_position = 0.95,      # Adjust vertical position as needed (0 to 1 scale)
+    tip_length = 0.02,      # Length of the downward bracket tips
+    color = "black",        # Keeps the bracket line black
+    inherit.aes = FALSE,    # Prevents conflict with fill/color aesthetics
+    aes(x = condition, y = similarity_to_cond_obj)
+  ) +
+  # Condition colors
   scale_fill_manual(values = c(
     "Control" = "#fde725FF",
     "Low-Agency" = "#440154FF",
     "High-Agency" = "#18bc9c")) +
+  scale_color_manual(values = c(
+    "Control" = "#fde725FF",
+    "Low-Agency" = "#440154FF",
+    "High-Agency" = "#18bc9c")) +
+  # Map filled shapes and override legend display labels
+  scale_shape_manual(
+    values = c(
+      "frisbee" = 21,
+      "brick" = 22,
+      "bubblewrap" = 24
+    ),
+    labels = c(
+      "frisbee" = "frisbee",
+      "brick" = "brick",
+      "bubblewrap" = "bubble wrap"
+    )
+  ) +
+  # Explicitly set y-axis limits from 0 to 1
   scale_y_continuous(
+    limits = c(0, 1),
     breaks = seq(0, 1, by = 0.1)
   ) +
-  # coord_cartesian(clip="on") +
   theme_apa() +
   labs(
     x = "",
     y = "Homogeneity (Cosine Similarity to\n Condition-Object Centroid)",
-    fill = "Condition"
+    shape = "Object"
   ) +
-  # coord_flip() + # Flipping makes it easier to read the condition names
-  theme(legend.position = "none")
+  guides(fill = "none", color = "none") +
+  theme(legend.position = "right")
+
 doshi_plot
-ggsave("figures/doshi_homogeneity.png", doshi_plot)
+
+ggsave("../../figures/doshi_homogeneity.png", doshi_plot)
 ```
 
 ### Top-performing ideas by condition
