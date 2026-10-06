@@ -861,8 +861,17 @@ ggsave(plot=combined_evaluation_plot, filename="../../figures/evaluations.png")
 ## H1: Individual-level creativity, originality, and usefulness
 
 ```{r}
+iriss_manual_ratings_metrics <- iriss_manual_ratings_metrics |> 
+  mutate(condition = fct_relevel(condition,
+                                 "Low-Agency",
+                                 "High-Agency",
+                                 "Control"))
+
 iriss_originality_mod <- lmer(
-  originality ~ condition + (1|object) + (1|submitter_id), data= iriss_manual_ratings_metrics)
+  originality ~ 
+    condition + 
+    (1|object) + 
+    (1|submitter_id), data= iriss_manual_ratings_metrics)
 summary(iriss_originality_mod)
 anova(iriss_originality_mod)
 
@@ -895,11 +904,17 @@ coef(summary(iriss_originality_demographics))
 
 # Repeat models for creativity and usefulness
 iriss_creativity_mod <- lmer(
-  creativity ~ condition + (1|object) + (1|submitter_id), data= iriss_manual_ratings_metrics)
+  creativity ~ 
+    condition + 
+    (1|object) + 
+    (1|submitter_id), data= iriss_manual_ratings_metrics)
 summary(iriss_creativity_mod)
 
 iriss_usefulness_mod <- lmer(
-  usefulness ~ condition + (1|object) + (1|submitter_id), data= iriss_manual_ratings_metrics)
+  usefulness ~ 
+    condition + 
+    (1|object) + 
+    (1|submitter_id), data= iriss_manual_ratings_metrics)
 summary(iriss_usefulness_mod)
 ```
 
@@ -1043,9 +1058,16 @@ iriss_semantic_similarities <- iriss_semantic_similarities %>%
                                  "Control"))
 
 
-iriss_semantic_similarity_mod <- lmer(similarity_to_cond_obj ~ condition + (1|object) + (1|submitter_id), data=iriss_semantic_similarities)
+iriss_semantic_similarity_mod <- lmer(similarity_to_cond_obj ~ 
+                                        condition + 
+                                        (1|object) + 
+                                        (1|submitter_id), data=iriss_semantic_similarities)
 
 summary(iriss_semantic_similarity_mod)
+
+iriss_semantic_similarities |> 
+  group_by(condition) |> 
+  get_summary_stats(similarity_to_cond_obj)
 
 sjPlot::tab_model(iriss_semantic_similarity_mod)
 
@@ -1077,6 +1099,11 @@ noncompliant_conversations <- bind_rows(no_chats_high_agency, no_chats_low_agenc
 noncompliant_conversations %>% 
   group_by(condition) %>% 
   summarize(n_distinct(submitter_id))
+
+# Check text feedback for noncompliant submitters
+noncompliant_feedback <- left_join(noncompliant_conversations, text_feedback, by = "submitter_id") 
+  
+  
 ```
 
 ## Subsetting of conversations and participants based on which conversations were evaluated and which were compliant
@@ -1536,6 +1563,7 @@ compliant_originality_mod <- lmer(
     (1|submitter_id), data=compliant_trials_demographics)
 summary(compliant_originality_mod)
 
+
 compliant_creativity_mod <- lmer(
   creativity ~ 
     # scale(age) + 
@@ -1632,6 +1660,8 @@ compliant_originality_aug <- lmer(
     (1|rater_id), data=compliant_trials_demographics)
 summary(compliant_originality_aug)
 
+anova(compliant_originality_mod, compliant_originality_aug)
+
 compliant_creativity_aug <- lmer(
   creativity ~ 
     # scale(age) + 
@@ -1642,6 +1672,8 @@ compliant_creativity_aug <- lmer(
     (1|submitter_id) +
     (1|rater_id), data=compliant_trials_demographics)
 summary(compliant_creativity_aug)
+# Compare the two models
+anova(compliant_creativity_mod, compliant_creativity_aug)
 
 compliant_usefulness_aug <- lmer(
   usefulness ~ 
@@ -1655,6 +1687,7 @@ compliant_usefulness_aug <- lmer(
 )
 
 summary(compliant_usefulness_aug)
+anova(compliant_usefulness_mod, compliant_usefulness_aug)
 ```
 
 
