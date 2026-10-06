@@ -1064,7 +1064,7 @@ iriss_semantic_similarity_mod <- lmer(similarity_to_cond_obj ~
                                         (1|submitter_id), data=iriss_semantic_similarities)
 
 summary(iriss_semantic_similarity_mod)
-
+anova(iriss_semantic_similarity_mod)
 iriss_semantic_similarities |> 
   group_by(condition) |> 
   get_summary_stats(similarity_to_cond_obj)
@@ -1490,6 +1490,7 @@ evaluations <- iriss_manual_ratings_metrics %>%
 
 ```{r}
 compliant_trials_demographics <- left_join(evaluations, demographics_recoded, by="submitter_id")
+write_csv(compliant_trials_demographics, "data/compliant_trials_demographics.csv")
 ```
 
 # Descriptives
@@ -1634,7 +1635,7 @@ df_long <- compliant_trials_demographics %>%
 
 # 2. Fit a crossed random-effects model using lmer
 # Creativity ~ (1 | unit_id) + (1 | rater_id)
-creativiy_fit <- lmer(creativity ~ (1 | unit_id) + (1 | rater_id), data = df_long).
+creativity_fit <- lmer(creativity ~ (1 | unit_id) + (1 | rater_id), data = df_long)
 
 originality_fit <- lmer(originality ~ (1 | unit_id) + (1 | rater_id), data = df_long)
 
@@ -1688,6 +1689,25 @@ compliant_usefulness_aug <- lmer(
 
 summary(compliant_usefulness_aug)
 anova(compliant_usefulness_mod, compliant_usefulness_aug)
+
+augmented_models <- list(
+  "Originality" = compliant_originality_aug,
+  "Creativity"  = compliant_creativity_aug,
+  "Usefulness"  = compliant_usefulness_aug
+)
+
+table <- modelsummary(
+  augmented_models,
+  output    = "latex",              # or "compliant_models.tex" to write a file
+  estimate  = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars     = c("*" = .05, "**" = .01, "***" = .001),
+  coef_rename = c("(Intercept)" = "Intercept"),   # add condition labels here, e.g. "conditionX" = "X"
+  gof_map   = c("nobs", "aic", "bic", "icc", "r2.marginal", "r2.conditional"),
+  title     = "Linear mixed-effects models predicting ratings in the compliant condition",
+  notes     = "Standard errors in parentheses. Random intercepts for object, submitter, and rater."
+)
+
 ```
 
 
@@ -2369,6 +2389,12 @@ direct_asks <- read_csv("data/direct_asks.csv") %>%
                              Condition=="pilot"~"High-Agency")) %>% 
   rename(condition="Condition")
 
+direct_asks |> 
+  group_by(condition) |> 
+  get_summary_stats(direct_ask_proportion,
+                    type = "mean_sd")
+
+direct_asks |> cohens_d(direct_ask_proportion ~ condition)
 
 # Merge direct asks with individual-level creativity
 direct_asks_creativity <- direct_asks %>% 
@@ -2405,8 +2431,8 @@ direct_asks_p <- direct_asks %>%
   geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0) +
   scale_color_manual(
     values = c(
-      "Low-Agency<br><i>N</i> = 40" = "#F8766D",
-      "High-Agency<br><i>N</i> = 36" = "#00BA38"
+      "Low-Agency<br><i>N</i> = 40" = "#440154FF",
+      "High-Agency<br><i>N</i> = 36" = "#22A884FF"
     )) +
   ggsignif::geom_signif(
     comparisons = list(c("High-Agency<br><i>N</i> = 36", "Low-Agency<br><i>N</i> = 40")), 
@@ -2425,8 +2451,7 @@ direct_asks_p <- direct_asks %>%
 
 direct_asks_p
 
-ggsave("figures/
-       direct_asks.png", plot=direct_asks_p)
+ggsave("figures/direct_asks.png", plot=direct_asks_p)
 
 
 t.test(data=direct_asks, direct_ask_proportion~condition, var.equal = TRUE)

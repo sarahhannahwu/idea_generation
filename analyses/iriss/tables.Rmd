@@ -1,0 +1,148 @@
+---
+title: "tables"
+output: pdf_document
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{caption}
+  - '\captionsetup[table]{labelformat=empty,labelsep=none,skip=0pt}'
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+# Use kableExtra for LaTeX output (only needs booktabs; avoids tabularray issues)
+options(modelsummary_factory_latex = "kableExtra")
+```
+
+```{r libs}
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(modelsummary)
+library(kableExtra)
+library(performance)   # needed for ICC and R2 rows
+```
+
+```{r models, include=FALSE}
+# Path is relative to the folder containing this .Rmd (knitting uses that as the working directory)
+compliant_trials_demographics <- read_csv("../../data/compliant_trials_demographics.csv")
+
+# Change reference level to Low-Agency
+compliant_trials_demographics <- compliant_trials_demographics %>%
+  mutate(condition = fct_relevel(condition,
+                                 "Low-Agency",
+                                 "High-Agency",
+                                 "Control"))
+
+compliant_originality_aug <- lmer(
+  originality ~ condition +
+    (1|object) + (1|submitter_id) + (1|rater_id),
+  data = compliant_trials_demographics)
+anova(compliant_originality_aug)
+
+compliant_creativity_aug <- lmer(
+  creativity ~ condition +
+    (1|object) + (1|submitter_id) + (1|rater_id),
+  data = compliant_trials_demographics)
+anova(compliant_creativity_aug)
+
+
+compliant_usefulness_aug <- lmer(
+  usefulness ~ condition +
+    (1|object) + (1|submitter_id) + (1|rater_id),
+  data = compliant_trials_demographics)
+anova(compliant_usefulness_aug)
+
+augmented_models <- list(
+    "Creativity"  = compliant_creativity_aug,
+  "Originality" = compliant_originality_aug,
+  "Usefulness"  = compliant_usefulness_aug
+)
+```
+
+## Table A2
+\noindent{\large\textit{Linear Mixed-Effects Models Predicting Subjective Ratings of Creativity, Originality, and Usefulness}}
+
+\medskip
+
+```{r table, results='asis'}
+tab_a2 <- modelsummary(
+  augmented_models,
+  output      = "latex",
+  align       = "lccc",
+  estimate    = "{estimate}{stars}",
+  statistic   = "({std.error})",
+  stars       = c("*" = .05, "**" = .01, "***" = .001),
+  coef_rename = c(
+    "(Intercept)"             = "Intercept",
+    "conditionHigh-Agency"    = "High-Agency",
+    "conditionControl"        = "Control",
+    "SD (Intercept rater_id)" = "SD (Rater intercept)",
+    "SD (Intercept submitter_id)" = "SD (Submitter intercept)",
+    "SD (Intercept object)" = "SD (Object intercept)",
+    "SD (Observations)" = "SD (Residual)"
+  ),
+  gof_map     = c("nobs", "aic", "bic", "icc", "r2.marginal", "r2.conditional"),
+  title       = ""
+) %>%
+  kable_styling(latex_options = "hold_position") %>%
+  column_spec(2:4, width = "3cm") |> 
+  footnote(
+    general = "NOTELABEL Standard errors in parentheses. The Low-Agency condition is set as the reference level.",
+    general_title = "",
+    footnote_as_chunk = TRUE,
+    threeparttable = TRUE,
+    escape = FALSE
+  )
+
+# Swap the placeholder for an italic "Note:" (done here because kableExtra
+# strips backslashes from text passed to footnote())
+tab_a2 <- paste0(strsplit(as.character(tab_a2), "NOTELABEL", fixed = TRUE)[[1]],
+                 collapse = "\\textit{Note:}")
+knitr::asis_output(tab_a2)
+```
+
+\newpage
+
+## Table A3
+\noindent{\large\textit{Linear Mixed-Effects Model Predicting Similarity to Condition-Object Centroid}}
+
+\medskip
+
+```{r table_a3, results='asis'}
+iriss_doshi <- read_csv("../../data/doshi_centroid_analysis.csv")
+# Set Low-Agency as the reference level
+iriss_doshi <- iriss_doshi %>%
+  mutate(condition = fct_relevel(condition,
+                                 "Low-Agency",
+                                 "High-Agency",
+                                 "Control"))
+
+iriss_doshi_mod <- lmer(similarity_to_cond_obj ~ 
+                          condition + 
+                          (1|submitter_id) +
+                          (1|object), 
+                        data=iriss_doshi)
+
+tab_a3 <- modelsummary(
+  list("Cosine Similarity to Centroid" = iriss_doshi_mod),
+  coef_rename = c(
+    "conditionHigh-Agency" = "High-Agency",
+    "conditionControl" = "Control",
+    "SD (Intercept submitter_id)" = "SD (Submitter intercept)",
+    "SD (Intercept object)" = "SD (Object intercept)",
+    "SD (Observations)" = "SD (Residual)"
+  ),
+  output = "latex",
+  title = "",
+  stars = c(`***` = 0.001, `**` = 0.01, `*` = 0.05)
+) %>%
+  kable_styling(latex_options = "hold_position")
+
+# Italicize the "p" in the significance-stars note
+tab_a3 <- gsub("(?<![A-Za-z\\\\])p(?= (?:\\$<\\$|<|\\\\textless))",
+               "\\\\textit{p}", as.character(tab_a3), perl = TRUE)
+knitr::asis_output(tab_a3)
+```
+
