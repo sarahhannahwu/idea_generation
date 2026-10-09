@@ -6,6 +6,7 @@ receipts/
 .vscode
 .R*
 analyses/archived
+analyses/cloudresearch
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
