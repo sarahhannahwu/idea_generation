@@ -2392,7 +2392,7 @@ direct_asks <- read_csv("data/direct_asks.csv") %>%
 direct_asks |> 
   group_by(condition) |> 
   get_summary_stats(direct_ask_proportion,
-                    type = "mean_sd")
+                    type = "mean_ci")
 
 direct_asks |> cohens_d(direct_ask_proportion ~ condition)
 
@@ -2425,10 +2425,10 @@ direct_asks_p <- direct_asks %>%
     TRUE ~ condition
   )) %>% 
   group_by(condition) %>% 
-  get_summary_stats(direct_ask_proportion, type="mean_se") %>% 
+  get_summary_stats(direct_ask_proportion, type="mean_ci") %>% 
   ggplot(aes(x=condition, y=mean, color=condition)) +
   geom_point(size=4) +
-  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0) +
+  geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=0) +
   scale_color_manual(
     values = c(
       "Low-Agency<br><i>N</i> = 40" = "#440154FF",
